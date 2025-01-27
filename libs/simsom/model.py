@@ -1,7 +1,4 @@
 """ 
-2024-08-16
-Model before adding algorithm variations. Use to run exps with smaller time delay values and robustness results
-
 Code to (re)produce results in the paper 
 "Delayed takedown of illegal content on social media makes moderation ineffectives" (Truong et al.)
 
