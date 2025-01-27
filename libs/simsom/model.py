@@ -1,10 +1,6 @@
 """ 
-2024-08-16
-Model before adding algorithm variations. Use to run exps with smaller time delay values and robustness results
-
 Code to (re)produce results in the paper 
-"Manipulating the Online Marketplace of Ideas" (Truong et al.)
-https://arxiv.org/abs/1907.06130
+"Delayed takedown of illegal content on social media makes moderation ineffectives" (Truong et al.)
 
 Main class to run the simulation. Represents an Information System
 Definitions: 
@@ -78,7 +74,7 @@ from typing import Tuple, List
 import os
 
 
-class SimSomV1:
+class SimSomMod:
     def __init__(
         self,
         graph_gml,
@@ -98,12 +94,6 @@ class SimSomV1:
         modeling_legality=False,
         moderate=False,
         moderation_half_life=1,
-        shadow_ban=False,
-        shadow_ban_threshold=2,
-        suspend=False,
-        suspension_threshold=1,
-        suspension_duration=100,
-        suspension_delay=0,
         converge_by="quality",  # ['steps', 'quality', 'illegal_frac']
         max_steps=100,
     ):
@@ -120,18 +110,8 @@ class SimSomV1:
 
         # moderation
         self.moderate = moderate
-        self.shadow_ban = shadow_ban
         self.moderation_half_life = moderation_half_life
         self.survival_prob = self._halflife_to_survivalprob(self.moderation_half_life)
-        self.shadow_ban_threshold = shadow_ban_threshold
-
-        # suspension
-        self.suspend = suspend
-        self.suspension_threshold = suspension_threshold
-        self.suspension_duration = suspension_duration
-        self.suspension_delay = suspension_delay  # delay
-        self.suspended_agent_info = {}
-        self.suspended_message_blacklist = []
 
         # simulation options
         self.n_threads = n_threads
@@ -164,7 +144,6 @@ class SimSomV1:
         self.message_metadata = {}
         self.agent_feeds = {}  # dict of agent_uid - [message_ids]
         self.user_id_illegal = {}  # dict of agent_uid - number_of_illegal
-        self.shadow = set()  # keep track of users that should be shadow banned
 
         # each item is a 2d numpy array of message info
         # each column is a message, each row is the information: messages, appeal, popularity, recency, ages, ranking, is_chosen
@@ -292,23 +271,11 @@ class SimSomV1:
             # Propagate messages
             self.simulation_step()
 
-            # update "suspended_agent_info"
-            if self.suspend:
-                if self.verbose:
-                    print(
-                        f"- suspension (t={self.time_step}, length={len(self.suspended_agent_info)})..",
-                        flush=True,
-                    )
-                self.suspension_step()
-
             # Moderation
             if self.moderate:
                 if self.verbose:
                     self.logger.info(f"- removal (t={self.time_step})..")
                 self.moderation_step()
-            if self.shadow_ban:
-                if self.verbose:
-                    print(f"  shadow ban length={len(self.shadow)} users", flush=True)
 
             # Update convergence metrics
             self.update_quality()
@@ -471,7 +438,6 @@ class SimSomV1:
         """
         Represents an action by `agent` at each timestep. `agent` can reshare from their own feeds or post new messages.
         Returns `agent` suggested changes: a tentative list of newsfeeds that `agent` wants to post message on.
-        Before propagating the message to followers, a status check is performed on the user, if the user is shadow-banned, the message is not propagated.
         After returned from spawning, the simulator will consolidate this list of feeds with other agents' suggested changes.
         Keep track of reshare information if output_cascades is True.
         Input:
@@ -486,24 +452,6 @@ class SimSomV1:
 
             # update agent exposure to messages in its feed at login
             self._update_exposure(feed, agent)
-
-            # if agent is in the suspended list then pass, if their suspended duration is up, they can create posts
-
-            if (
-                agent_id in self.suspended_agent_info.keys()
-                and self.time_step >= self.suspended_agent_info[agent_id][1]
-                and self.suspended_agent_info[agent_id][0] == 0
-            ):
-                self.suspended_agent_info.pop(agent_id)
-
-            if (
-                agent_id in self.suspended_agent_info.keys()
-                and self.time_step >= self.suspended_agent_info[agent_id][1]
-                and self.suspended_agent_info[agent_id][0] > 0
-            ):
-                self.suspended_agent_info[agent_id][0] -= 1
-                modify_requests = []
-                return modify_requests
 
             # agent (re)share  message(s) (`no_posts` times if activity data available)
             shared_message_ids = []
@@ -521,38 +469,35 @@ class SimSomV1:
                 self._update_message_popularity(message_id, agent)
 
             modify_requests = []
-            if agent["uid"] not in self.shadow:
-                # spread: make requests to add message to top of follower's feed (theta copies if poster is bot to simulate flooding)
-                follower_idxs = self.network.predecessors(agent)  # return list of int
-                follower_uids = [
-                    n["uid"] for n in self.network.vs if n.index in follower_idxs
-                ]
-                for follower in follower_uids:
-                    ## TODO: Bots currently have uniform activity; they post once per day
-                    # How about when the bot posts more than once per day?
-                    # e.g: they share [m1,m2], with theta=2 -> request = [m1,m2,m1,m2] or [m1,m1,m2,m2]? aka numpy.tile or np.repeat?
-                    try:
-                        # TODO: Can be shortened
-                        if self.output_cascades:
-                            for message_id in shared_message_ids:
-                                self._update_reshares(message_id, agent_id, follower)
+            # spread: make requests to add message to top of follower's feed (theta copies if poster is bot to simulate flooding)
+            follower_idxs = self.network.predecessors(agent)  # return list of int
+            follower_uids = [
+                n["uid"] for n in self.network.vs if n.index in follower_idxs
+            ]
+            for follower in follower_uids:
+                ## TODO: Bots currently have uniform activity; they post once per day
+                # How about when the bot posts more than once per day?
+                # e.g: they share [m1,m2], with theta=2 -> request = [m1,m2,m1,m2] or [m1,m1,m2,m2]? aka numpy.tile or np.repeat?
+                try:
+                    # TODO: Can be shortened
+                    if self.output_cascades:
+                        for message_id in shared_message_ids:
+                            self._update_reshares(message_id, agent_id, follower)
 
-                        if agent["bot"]:
-                            modify_requests.append(
-                                (
-                                    follower,
-                                    np.tile(shared_message_ids, self.theta).tolist(),
-                                )
+                    if agent["bot"]:
+                        modify_requests.append(
+                            (
+                                follower,
+                                np.tile(shared_message_ids, self.theta).tolist(),
                             )
-                        else:
-                            modify_requests.append((follower, shared_message_ids))
-                    except Exception as e:
-                        self.logger.error(f"Exception in message propagation: {str(e)}")
-                        sys.exit(
-                            "Error while updating tracking/appending to modify_requests (user_step)."
                         )
-            else:
-                pass
+                    else:
+                        modify_requests.append((follower, shared_message_ids))
+                except Exception as e:
+                    self.logger.error(f"Exception in message propagation: {str(e)}")
+                    sys.exit(
+                        "Error while updating tracking/appending to modify_requests (user_step)."
+                    )
         except Exception as e:
             raise Exception("Error in user_step: ", e)
         return modify_requests
@@ -561,7 +506,6 @@ class SimSomV1:
         """
         Create a new message or reshare a message from newsfeed.
         In the case of a very boring newsfeed (if the sum of the message rankings is equal to 0, or a number that is set), the agent takes no action.
-        Illegal content and related users are tracked in case of an active shadowban or suspension flag.
         Returns a message id (int) in case of activity, or False in case of skipped action
         """
         # TODO: Do we want to keep the popularity of messages at each timestep?
@@ -593,10 +537,6 @@ class SimSomV1:
             else:
                 # new message
                 self.num_message_unique += 1
-                # best way to keep apply shadow ban is during message creation
-                user_under_shadow = False
-                if agent["uid"] in self.shadow:
-                    user_under_shadow = True
 
                 message = Message(
                     id=self.num_message_unique,
@@ -606,21 +546,7 @@ class SimSomV1:
                     phi=self.phi,
                     quality_distr=eval(self.agent_quality_dist),
                     get_legality=self.modeling_legality,
-                    is_shadow=user_under_shadow,
                 )
-                # keep track of illegal content and users to shadow ban/suspend them
-                if self.shadow_ban | self.suspend:
-                    if message.quality == 0:
-                        if message.user_id in self.user_id_illegal.keys():
-                            self.user_id_illegal[message.user_id] += 1
-                        else:
-                            self.user_id_illegal[message.user_id] = 1
-                        if self.suspend:
-                            if (
-                                self.user_id_illegal[message.user_id]
-                                > self.shadow_ban_threshold
-                            ):
-                                self.shadow.add(message.user_id)
 
                 self.all_messages[message.id] = message
                 message_id = message.id
@@ -680,72 +606,6 @@ class SimSomV1:
                         newsfeed, removal_actual
                     )
 
-        return
-
-    def suspension_step(self) -> None:
-        """
-        Suspends accounts that posts illegal contents more than a threshold (default 1).
-        Illegal accounts are suspended for a suggested duration (default 100).
-        """
-        to_suspend_agent = list()
-        delay_time_step = self.time_step + self.suspension_delay
-        # Identify agents and see whether they should be suspended this timestamp based on their message/suspension history
-        for agent in self.network.vs:
-            agent_id = agent["uid"]
-
-            # third: add an agent to the list "to_suspend_agent" if the number of "illegal_message_count" is the same or above the threshold AND is NOT in the "suspended_agent_info"
-            if not agent_id in self.user_id_illegal.keys():
-                continue
-
-            if (
-                self.user_id_illegal[agent_id] >= self.suspension_threshold
-                and agent_id not in self.suspended_agent_info.keys()
-            ):
-                to_suspend_agent.append(agent_id)
-
-        # add the agents in "to_suspend_agent" to "suspended_agent_info"
-        if len(to_suspend_agent) > 0:
-            for id in to_suspend_agent:
-                if id not in self.suspended_agent_info.keys():
-                    self.suspended_agent_info[id] = [
-                        self.suspension_duration,
-                        delay_time_step,
-                    ]
-                self.user_id_illegal[agent_id] = 0
-
-        # delete all the messages by agents in "to suspend_agent" from all the feeds
-        if len(to_suspend_agent) > 0:
-            delete_message_list = list()
-            delete_message_id_list = list()
-            for id in to_suspend_agent:
-                delete_message_id_list = [
-                    message_id
-                    for message_id, message in self.all_messages.items()
-                    if agent_id == message.user_id
-                ]
-                delete_message_list = [
-                    message
-                    for message_id, message in self.all_messages.items()
-                    if agent_id == message.user_id
-                ]
-
-            for agent_id, newsfeed in self.agent_feeds.items():
-                if len(newsfeed[0]) > 0:
-                    self.agent_feeds[agent_id] = self._remove_messages_update_feed(
-                        newsfeed, delete_message_id_list
-                    )
-                    # "if $a_i$ is not the author of $m_j$, check if the last person who spread $m_j$ is $a_i$, if true, subtract 1 from popularity"
-                    for message in delete_message_list:
-                        if agent_id != message.user_id and "spread_via_agents" in dir(
-                            self.all_messages[message.id]
-                        ):
-                            if agent_id == message.spread_via_agents[-1]:
-                                self.all_messages[message.id].share_th -= 1
-
-            # flag the message from suspended accounts:
-            for message in delete_message_list:
-                self.message_metadata[message.id]["deleted_timestep"] = self.time_step
-                self.message_metadata[message.id]["deleted_reason"] = "suspension"
         return
 
     def _remove_messages_update_feed(
@@ -1164,15 +1024,7 @@ class SimSomV1:
             "moderation_params": [
                 "modeling_legality",
                 "moderate",
-                "shadow_ban",
                 "moderation_half_life",
-                "shadow_ban_threshold",
-            ],
-            "suspension_params": [
-                "suspend",
-                "suspension_threshold",
-                "suspension_duration",
-                "suspension_delay",
             ],
             "simulation_params": [
                 "n_threads",

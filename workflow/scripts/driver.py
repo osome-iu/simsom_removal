@@ -1,15 +1,13 @@
 """ 
-2024-08-16
-Use to run SimSomV1: model before adding algorithm variations. Use to run exps with smaller time delay values and robustness results
-    Script to run simulation(s)
-    Parse command-line arguments specifying simulation parameters and output file paths 
-    Run simulation(s)
+Script to run simulation(s)
+Parse command-line arguments specifying simulation parameters and output file paths 
+Run simulation(s)
 
-    Reshare output file (.csv) and verbose tracking file (.json.gz) names are always suffixed by number of runs 
-    e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.json.gz"
+Reshare output file (.csv) and verbose tracking file (.json.gz) names are always suffixed by number of runs 
+e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.json.gz"
 """
 
-from simsom import SimSomV1
+from simsom import SimSomMod
 import simsom.utils as utils
 import sys
 import argparse
@@ -37,8 +35,8 @@ def multiple_simulations(
     for time in range(times):
         logger.info(f"**{time+1}/{times}**")
         try:
-            logger.info("Create SimSomV1 instance..")
-            follower_sys = SimSomV1(**infosys_specs, logger=logger)
+            logger.info("Create SimSomMod instance..")
+            follower_sys = SimSomMod(**infosys_specs, logger=logger)
             if time == 0:
                 logger.info(f"Parameters: {follower_sys.__repr__()}")
             logger.info("Start simulation ..")
@@ -87,8 +85,8 @@ def multiple_simulations(
 
 def run_simulation(infosys_specs, logger, reshare_fpath="reshares.csv"):
     # baseline:  mu=0.5, sigma=15, beta=0.01, gamma=0.001, phi=1, theta=1
-    logger.info("Create SimSomV1 instance..")
-    follower_sys = SimSomV1(**infosys_specs)
+    logger.info("Create SimSomMod instance..")
+    follower_sys = SimSomMod(**infosys_specs)
     logger.info(f"Start simulation..")
     measurements = follower_sys.simulation(reshare_fpath=reshare_fpath)
     logger.info("average quality for follower network:", measurements["quality"])
@@ -97,7 +95,7 @@ def run_simulation(infosys_specs, logger, reshare_fpath="reshares.csv"):
 
 def main(args):
     parser = argparse.ArgumentParser(
-        description="run simulation on an igraph instance of SimSomV1",
+        description="run simulation on an igraph instance of SimSomMod",
     )
 
     parser.add_argument(
@@ -194,7 +192,7 @@ def main(args):
         also_print=True,
     )
     # avoid passing undefined keyword to InfoSys
-    legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSomV1.__init__)
+    legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSomMod.__init__)
 
     logger.info("Finished parsing arguments. Running simulation.. ")
 
