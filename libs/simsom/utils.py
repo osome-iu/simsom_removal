@@ -10,37 +10,33 @@ import json
 import gzip
 import datetime
 import inspect
-import scipy.stats as stats
 import simsom.config_vals as configs
+from typing import Tuple, List
 
 
 ### I/O
-def write_json_compressed(fpath, data):
-    # write compressed json for hpc - pass file handle instead of filename so we can flush
+def write_json_compressed(fpath: str, data: dict) -> object:
+    # write compressed json for hpc - using with statement for better resource management
     try:
-        fout = gzip.open(fpath, "w")
-        fout.write(json.dumps(data).encode("utf-8"))
-        # force writing out the changes
-        fout.flush()
-        fout.close()
+        with gzip.open(fpath, "w") as fout:
+            fout.write(json.dumps(data).encode("utf-8"))
         print(f"Successfully wrote to {fpath}")
         return True
     except Exception as e:
-        print("Fail to write json compressed", e)
+        print("Failed to write json compressed", e)
         return e
 
 
-def read_json_compressed(fpath):
+def read_json_compressed(fpath: str) -> object:
     data = None
     try:
-        fin = gzip.open(fpath, "r")
-        json_bytes = fin.read()
-        json_str = json_bytes.decode("utf-8")
-        data = json.loads(json_str)
-        fin.close()
+        with gzip.open(fpath, "r") as fin:
+            json_bytes = fin.read()
+            json_str = json_bytes.decode("utf-8")
+            data = json.loads(json_str)
         return data
     except Exception as e:
-        print(e)
+        print("Failed to read json compressed", e)
         return e
 
 
@@ -60,21 +56,21 @@ def update_dict(adict, default_dict, fill_na=True):
 
 def netconfig2netname(config_fname, network_config):
     # Map specific args to pre-constructed network name
-    # network_config is a dict of at least 3 keys: {'gamma', 'strategy'}
-    # structure: network_config = {'gamma':0.005, 'targeting_criterion': 'partisanship'}
+    # network_config is a dict of at least 3 keys: {'gamma', 'strategy', 'activity_differential'}
+    # structure: network_config = {'gamma':0.005, 'targeting_criterion': 'partisanship', 'activity_differential': False}
 
     exp_configs = json.load(open(config_fname, "r"))
     EXPS = exp_configs[
         "vary_network"
     ]  # keys are name of network, format: '{betaidx}{gammaidx}{targetingidx}'
 
-    legal_vals = ["gamma", "targeting_criterion"]
+    legal_vals = ["gamma", "targeting_criterion", "activity_differential"]
     network_config = {k: val for k, val in network_config.items() if k in legal_vals}
 
     GAMMA = configs.GAMMA
     TARGETING = configs.TARGETING
 
-    network_fname = f"{GAMMA.index(network_config['gamma'])}{TARGETING.index(network_config['targeting_criterion'])}"
+    network_fname = f"{GAMMA.index(network_config['gamma'])}{TARGETING.index(network_config['targeting_criterion'])}_activity_diff_{str(network_config['activity_differential']).lower()}"
 
     for arg_name in network_config.keys():
         assert EXPS[network_fname][arg_name] == network_config[arg_name]
@@ -158,21 +154,13 @@ def safe_open(path, mode="w"):
     return open(path, mode)
 
 
-def kendall_tau(ranking1, ranking2):
-    # ranking1: list of ranking for n elements in criteria1
-    # ranking2: list of ranking for n elements in criteria2
-    # such that ranking1[i] and ranking2[i] is the ranking of element i in 2 different criteria
-    tau, p_value = stats.kendalltau(ranking1, ranking2)
-    return tau, p_value
-
-
-def entropy(x):
+def entropy(x: List[float]) -> float:
     # x: list of proportion
     entropy = np.sum(x * np.log(x))
     return entropy
 
 
-def normalize(v):
+def normalize(v) -> float:
     norm = np.linalg.norm(v, ord=1)
     if norm == 0:
         return v

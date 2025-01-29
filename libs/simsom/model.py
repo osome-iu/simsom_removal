@@ -1,21 +1,26 @@
 """ 
 Code to (re)produce results in the paper 
-"Manipulating the Online Marketplace of Ideas" (Truong et al.)
-https://arxiv.org/abs/1907.06130
+"Delayed takedown of illegal content on social media makes moderation ineffectives" (Truong et al.)
 
 Main class to run the simulation. Represents an Information System
-Inputs: 
+Definitions: 
+- both illegal and harmful content are modeled the same way, i.e., messages that have the attribute `quality` equals to 0
+Arguments: 
     - graph_gml (str): path to igraph .graphml file
     - tracktimestep (bool): if True, track overall quality and exposure to illegal content at each timestep 
     - save_message_info (bool): if True, save all message and newsfeeds info (popularity, mapping of feed-messages, etc. this info is still tracked if flag is False)
     - output_cascades (bool): if True, track & save reshares information to .csv files (for network viz)
-    - verbose (bool): if True, print messages 
+    - verbose (bool): if True, print simulation status to the terminal and to a .log file
     - epsilon (float): threshold of quality difference between 2 consecutive timesteps to decide convergence. Default: 0.0001
     - rho (float): weight of the previous timestep's quality in calculating new quality. Default: 0.8
     - sigma (int): agent's newsfeed size. Default: 15
     - mu (float): probability that an agent create new messages. Default: 0.5
     - phi (float): phi in range [0,1] is the probability that a bot message's appeal equals 1. Default: 0
     - theta (int): number of copies bots make when creating messages. Default: 1
+    - illegal_content_probability (float): probability that human agents post illegal messages (for authentic illegal content. Doesn't apply for systems modeling inauthentic illegal content where only bots post low-q)
+    - moderate (bool): whether to remove illegal content. Default: False (no content removal)
+    - moderation_half_life (int): the survival probability of content under removal. Default: 1
+    - converge_by (str): convergence condition: {'steps', 'quality', 'illegal_frac'}. Default: 'quality'. Choose the condition based on modeling objective, e.g: use 'illegal_frac' if we're interested in exposure to illegal content
 Important note: 
     - graph_gml: link direction is following (follower -> friend), opposite of info spread!
     - Epsilon value was tested and fixed to the default values above.
@@ -51,7 +56,7 @@ Outputs:
             - agent2 (str): uid of the agent resharing the message
 """
 
-from simsom.message import Message
+from simsom import Message
 import simsom.utils as utils
 import igraph as ig
 import csv
@@ -60,13 +65,16 @@ import numpy as np
 from collections import Counter, defaultdict
 import concurrent.futures
 import queue
-from copy import deepcopy
+
+# from copy import deepcopy
 import sys
 import warnings
+import scipy.stats as stats
+from typing import Tuple, List
 import os
 
 
-class SimSom:
+class SimSomMod:
     def __init__(
         self,
         graph_gml,
@@ -76,16 +84,17 @@ class SimSom:
         output_cascades=False,
         verbose=False,
         logger=None,
-        debug=False,
         n_threads=7,
         epsilon=0.0001,  # Don't change this value
-        rho=0.8,  # Don't change this value, check note above
-        sigma=15,
+        rho=0.9,  # Don't change this value, check note above
         mu=0.5,
+        sigma=15,
         phi=0,
         theta=1,
-        appeal_exp=5,
-        converge_by="quality",  # ['steps', 'quality']
+        modeling_legality=False,
+        moderate=False,
+        moderation_half_life=1,
+        converge_by="quality",  # ['steps', 'quality', 'illegal_frac']
         max_steps=100,
     ):
         # graph object
@@ -98,19 +107,22 @@ class SimSom:
         self.mu = mu
         self.phi = phi
         self.theta = theta
-        self.appeal_exp = appeal_exp
+
+        # moderation
+        self.moderate = moderate
+        self.moderation_half_life = moderation_half_life
+        self.survival_prob = self._halflife_to_survivalprob(self.moderation_half_life)
 
         # simulation options
         self.n_threads = n_threads
         self.verbose = verbose
         self.logger = logger
-        self.debug = debug
         self.tracktimestep = tracktimestep
         self.save_message_info = save_message_info
+        self.output_cascades = output_cascades
         # Track message information relative to each feed at each timestep
         ## !! Memory intensive !!!
         self.save_newsfeed_message_info = save_newsfeed_message_info
-        self.output_cascades = output_cascades
 
         #### debugging
         # number of unique messages ever created (including extincted ones)
@@ -120,32 +132,54 @@ class SimSom:
         self.num_human_messages_unique = 0
         #### debugging
 
-        # bookkeeping
-        self.quality_timestep = []  # list of overall quality at each timestep
+        ### bookkeeping
+        # agg. metrics at each timestep
+        self.quality_timestep = []  # overall quality
+        self.frac_illegal_views_timestep = []  # global frac. illegal views
+        self.mean_illegal_frac_timestep = []  # mean of frac. illegal content in feed
+
+        # messages & feeds
         self.message_dict = []  # list of all message objects
         self.all_messages = {}  # dict of message_id - message objects
         self.message_metadata = {}
         self.agent_feeds = {}  # dict of agent_uid - [message_ids]
+        self.user_id_illegal = {}  # dict of agent_uid - number_of_illegal
 
         # each item is a 2d numpy array of message info
         # each column is a message, each row is the information: messages, appeal, popularity, recency, ages, ranking, is_chosen
         self.reshare_tracking = []
 
-        self.exposure_timestep = []  # list of exposure to bot messages at each timestep
-
-        # convergence check
+        # modeling scenario
+        self.modeling_legality = modeling_legality
+        # convergence check. Simulation will keep running while converge_condition is True
         self.converge_by = converge_by
         self.max_steps = max_steps
         if self.converge_by == "quality":
             self.converge_condition = "self.quality_diff > self.epsilon"
-        elif self.converge_by == "steps":
-            self.converge_condition = "self.time_step < self.max_steps"
+            if self.modeling_legality:
+                warnings.warn(
+                    "Results is not meaningful if convergence condition is quality in modeling legality. Use `illegal_frac` instead."
+                )
+        if self.converge_by == "illegal_frac":
+            # In addition, simulation converges if there are 2 consecutive steps with zero illegal content
+            self.consecutive_zero_illegal_frac = False
+            self.converge_condition = "(self.illegal_frac_diff > self.epsilon) & (self.consecutive_zero_illegal_frac is False)"
+            if not self.modeling_legality:
+                warnings.warn(
+                    "Results is not meaningful if convergence condition is illegal_frac if not modeling legality. Use `quality` instead."
+                )
         else:
-            self.converge_condition = "(self.time_step < self.max_steps) or (self.quality_diff > self.epsilon)"
+            self.converge_condition = "self.time_step < self.max_steps"
+
+        self.mean_illegal_frac = 1
+        self.illegal_frac_diff = 1
 
         self.quality_diff = 1
         self.quality = 1
         self.time_step = 0
+        # list of lists. Each element is the age of all messages in that timestep
+        self.age_timestep = []
+
         # stats
         self.exposure = 0
         try:
@@ -157,13 +191,26 @@ class SimSom:
                     also_print=True,
                 )
             if verbose:
-                self.logger.info(self.network.summary())
+                self.logger.info(f"\t{self.network.summary()}")
 
             self.n_agents = self.network.vcount()
-            self.human_uids = [n["uid"] for n in self.network.vs if n["bot"] == 0]
-            self.is_human_only = (
-                True if len(self.human_uids) == self.n_agents else False
-            )
+            if "bot" not in self.network.vs.attributes():
+                self.is_human_only = True
+                self.human_uids = [n["uid"] for n in self.network.vs]
+            else:
+                self.is_human_only = False
+                self.human_uids = [n["uid"] for n in self.network.vs if n["bot"] == 0]
+            if "postperday" not in self.network.vs.attributes():
+                raise ValueError(
+                    " - User activity data not available. Please define the 'postperday' attribute in the igraph network."
+                )
+            if "qualitydistr" in self.network.vs.attributes():
+                self.agent_quality_dist = 'agent["qualitydistr"]'
+            else:
+                warnings.warn(
+                    " - User quality distribution data ('qualitydistr' not in the igraph network) not available. All messages follow an exponential distribution."
+                )
+                self.agent_quality_dist = "None"
             # init an empty feed for all agents
             # self.agent_feeds = {agent["uid"]: ([], []) for agent in self.network.vs}
             self.agent_feeds = defaultdict(lambda: ([], [], []))
@@ -171,16 +218,16 @@ class SimSom:
                 # sanity check: calculate number of followers
                 in_deg = [self.network.degree(n, mode="in") for n in self.network.vs]
                 self.logger.info(
-                    "Graph Avg in deg", round(sum(in_deg) / len(in_deg), 2)
+                    "- Graph Avg in deg: %s", round(sum(in_deg) / len(in_deg), 2)
                 )
 
         except Exception as e:
             raise Exception(
-                f"Unable to read graph file. File doesn't exist of corrupted: {graph_gml}",
+                f"- Unable to read graph file. File doesn't exist of corrupted: {self.graph_gml}",
                 e,
             )
 
-    def simulation(self, reshare_fpath=""):
+    def simulation(self, reshare_fpath="") -> dict:
         """
         Driver for simulation.
         This function calls simulation_step() N times at each timestep (where N is number of agents).
@@ -189,34 +236,51 @@ class SimSom:
             - reshare_fpath: path to .csv file containing reshare cascade info
         """
 
-        if self.output_cascades is True:
+        if self.output_cascades:
             self.reshare_fpath = reshare_fpath
+            if not os.path.exists(os.path.dirname(self.reshare_fpath)):
+                os.makedirs(os.path.dirname(self.reshare_fpath))
             reshare_fields = ["message_id", "timestep", "source", "target"]
             with open(self.reshare_fpath, "w", encoding="utf-8") as f:
                 writer = csv.writer(f, delimiter=",")
                 writer.writerow(reshare_fields)
 
-        # Run simulation until either or both convergence condition is met
+        # Run simulation until convergence condition is met
         while eval(self.converge_condition):
             num_messages = sum([len(feed) for feed, _, _ in self.agent_feeds.values()])
             if self.verbose:
                 self.logger.info(
-                    f"- time_step = {self.time_step}, q = {np.round(self.quality, 6)}, diff = {np.round(self.quality_diff, 6)}, existing human/all messages: {self.num_human_messages}/{num_messages}, unique human messages: {self.num_human_messages_unique}, total created: {self.num_message_unique}"
+                    f"- time_step = {self.time_step}, existing human/all messages: {self.num_human_messages}/{num_messages}, unique human messages: {self.num_human_messages_unique}, total created: {self.num_message_unique}"
                 )
-                self.logger.info("  exposure to harmful content: ", self.exposure)
+                self.logger.info(
+                    f"-  quality = {np.round(self.quality, 6)}, diff = {np.round(self.quality_diff, 6)}"
+                )
+                self.logger.info(f" - mean illegal frac. = {self.mean_illegal_frac}")
+                self.logger.info(
+                    f"-  exposure to harmful content: {np.round(self.exposure,5)}"
+                )
 
             self.time_step += 1
-            if self.tracktimestep is True:
+            if self.tracktimestep:
                 self.quality_timestep += [self.quality]
-                self.exposure_timestep += [self.measure_exposure()]
-                # record the timestep at which simulation would end with (rho; epsilon)
-                if self.quality_diff < self.epsilon:
-                    self.converged_rhoepsilon_timestep = self.time_step
+                self.mean_illegal_frac_timestep += [self.mean_illegal_frac]
+                self.frac_illegal_views_timestep += [
+                    self.measure_fraction_illegal_views()
+                ]
 
             # Propagate messages
             self.simulation_step()
 
+            # Moderation
+            if self.moderate:
+                if self.verbose:
+                    self.logger.info(f"- removal (t={self.time_step})..")
+                self.moderation_step()
+
+            # Update convergence metrics
             self.update_quality()
+            if self.modeling_legality:
+                self.update_avg_illegal_frac_infeed()
 
         ## Simulation finished - saving data
         try:
@@ -233,14 +297,16 @@ class SimSom:
             if self.tracktimestep:
                 # Save system measurements and message metadata
                 measurements["quality_timestep"] = self.quality_timestep
-                measurements["exposure_timestep"] = self.exposure_timestep
-
-                measurements["converged_rhoepsilon_timestep"] = (
-                    self.converged_rhoepsilon_timestep
+                # measurements["exposure_timestep"] = self.exposure_timestep
+                measurements["frac_illegal_views_timestep"] = (
+                    self.frac_illegal_views_timestep
                 )
+                measurements["mean_illegal_frac_timestep"] = (
+                    self.mean_illegal_frac_timestep
+                )
+                measurements["age_timestep"] = self.age_timestep
 
             if self.save_message_info:
-
                 measurements["all_messages"] = self.message_dict
 
                 ## Save agents' newsfeed info at the end of simulation (used to determine which messages are obsolete)
@@ -277,6 +343,7 @@ class SimSom:
                     reshared_message_dict[key] = all_reshare_tracking[idx].tolist()
 
                 measurements["reshared_messages"] = reshared_message_dict
+
         except Exception as e:
             raise Exception(
                 'Failed to output a measurement, e.g,["quality", "diversity", "discriminative_pow"] or save message info.',
@@ -285,23 +352,32 @@ class SimSom:
 
         return measurements
 
-    def simulation_step(self):
+    def simulation_step(self) -> None:
         """
         During each simulation step, agents reshare or post new messages (in parallel).
         After `n` agents have done their actions and return requests to modify their follower feeds, messages are not yet propagated in the network.
         This step aggregates popularity of the messages (if multiple agents reshare the same message) and distributes messages to newsfeeds.
         """
 
-        # all_agents = self.network.vs  # list of all agent ids
-        order = np.random.permutation(range(self.n_agents))
-        all_agents = [self.network.vs[idx] for idx in order]
+        # order = np.random.permutation(range(self.n_agents))
+        # all_agents = [self.network.vs[idx] for idx in order]
+        # most agents are not active in the timestep, due to the powerlaw distribution of activity observed empirically
+        active_agents = []
+        for agent in self.network.vs:
+            no_posts = agent["postperday"]
+            # 0<no_posts<1 is intepreted as the probability to (re)post a message
+            # x>1 is the number of posts (re)post by agent
+            if no_posts < 1 and random.random() < no_posts:
+                active_agents.append(agent)
+            if no_posts >= 1:
+                active_agents.append(agent)
+        random.shuffle(active_agents)
 
         q = queue.Queue()
 
-        def post_message(agent):
+        def post_message(agent: ig.Vertex) -> None:
             modify_requests = self.user_step(agent)
             if len(modify_requests) > 0:
-                # debugging: tracking the originator of the modify request
                 q.put(modify_requests)
 
         with concurrent.futures.ThreadPoolExecutor(
@@ -309,13 +385,15 @@ class SimSom:
         ) as executor:
             if self.time_step == 1:
                 self.logger.info(
-                    f" - Simulation running on {executor._max_workers} threads"
+                    f"- Simulation running on {executor._max_workers} threads"
                 )
-            for _ in executor.map(post_message, all_agents):
+            for _ in executor.map(post_message, active_agents):
                 try:
                     pass
                 except Exception as e:
-                    self.logger.error(e)
+                    self.logger.error(
+                        f"Exception in concurrent block: {str(e)}",
+                    )
                     sys.exit("Propagation (post_message) failed.")
 
         update_list = defaultdict(list)
@@ -331,29 +409,35 @@ class SimSom:
         # eg:
         # {'a1': defaultdict(int, {'1': 4, '2': 1, '3': 1, '6': 1, '7': 1}),
         # 'a2': defaultdict(int, {'2': 1, '1': 1, '4': 1})}
-        # print("Update list:", update_list)
+        # self.logger.info("Update list:", update_list)
 
         ### Distribute posts to newsfeeds
         # update_list: {agent_id: {message_id: popularity}}
 
+        ages = []
         for agent_id, message_list in update_list.items():
             message_counts = Counter(message_list)
             message_ids = list(message_counts.keys())
             no_shares = list(message_counts.values())
             try:
                 agent_message_ages = self.agent_feeds[agent_id][2]
+                if len(agent_message_ages) > 0:
+                    ages += agent_message_ages.tolist()
                 self._bulk_add_messages_to_feed(
                     agent_id, np.array(message_ids), np.array(no_shares)
                 )
             except Exception as e:
-                self.logger.error(e)
+                self.logger.error(f"Exception in simulation_step: {str(e)}")
                 sys.exit("Propagation (bulk_add_messages_to_feed) failed.")
+        # self.logger.info("Agent feeds after updating:", self.agent_feeds)
+
+        self.age_timestep += [ages]
         return
 
-    def user_step(self, agent):
+    def user_step(self, agent: ig.Vertex) -> List[Tuple[str, List[int]]]:
         """
         Represents an action by `agent` at each timestep. `agent` can reshare from their own feeds or post new messages.
-        Returns `agent` suggested changes: a tentative list of newsfeeds that `agent` wants to post message on
+        Returns `agent` suggested changes: a tentative list of newsfeeds that `agent` wants to post message on.
         After returned from spawning, the simulator will consolidate this list of feeds with other agents' suggested changes.
         Keep track of reshare information if output_cascades is True.
         Input:
@@ -369,36 +453,60 @@ class SimSom:
             # update agent exposure to messages in its feed at login
             self._update_exposure(feed, agent)
 
-            # posting
-            message_id = self._create_post(agent)
-            # book keeping: record that this agent shared a message
-            self._update_message_popularity(message_id, agent)
+            # agent (re)share  message(s) (`no_posts` times if activity data available)
+            shared_message_ids = []
 
+            no_posts = agent["postperday"]
+            shared_message_ids = []
+            for _ in range(int(np.ceil(no_posts))):
+                res = self._create_post(agent)
+                if res:
+                    shared_message_ids.append(res)
+
+            # TODO: find a more efficient way to do this
+            # book keeping: record that this agent shared a message
+            for message_id in shared_message_ids:
+                self._update_message_popularity(message_id, agent)
+
+            modify_requests = []
             # spread: make requests to add message to top of follower's feed (theta copies if poster is bot to simulate flooding)
             follower_idxs = self.network.predecessors(agent)  # return list of int
             follower_uids = [
                 n["uid"] for n in self.network.vs if n.index in follower_idxs
             ]
-
-            modify_requests = []
-
             for follower in follower_uids:
-                if self.output_cascades is True:
-                    self._update_reshares(message_id, agent_id, follower)
+                ## TODO: Bots currently have uniform activity; they post once per day
+                # How about when the bot posts more than once per day?
+                # e.g: they share [m1,m2], with theta=2 -> request = [m1,m2,m1,m2] or [m1,m1,m2,m2]? aka numpy.tile or np.repeat?
+                try:
+                    # TODO: Can be shortened
+                    if self.output_cascades:
+                        for message_id in shared_message_ids:
+                            self._update_reshares(message_id, agent_id, follower)
 
-                if agent["bot"] == True:
-                    modify_requests.append((follower, [message_id] * self.theta))
-                else:
-                    modify_requests.append((follower, [message_id]))
+                    if agent["bot"]:
+                        modify_requests.append(
+                            (
+                                follower,
+                                np.tile(shared_message_ids, self.theta).tolist(),
+                            )
+                        )
+                    else:
+                        modify_requests.append((follower, shared_message_ids))
+                except Exception as e:
+                    self.logger.error(f"Exception in message propagation: {str(e)}")
+                    sys.exit(
+                        "Error while updating tracking/appending to modify_requests (user_step)."
+                    )
         except Exception as e:
             raise Exception("Error in user_step: ", e)
-
         return modify_requests
 
-    def _create_post(self, agent):
+    def _create_post(self, agent: ig.Vertex) -> int:
         """
-        Create a new message or reshare a message from newsfeed
-        Returns a message id (int)
+        Create a new message or reshare a message from newsfeed.
+        In the case of a very boring newsfeed (if the sum of the message rankings is equal to 0, or a number that is set), the agent takes no action.
+        Returns a message id (int) in case of activity, or False in case of skipped action
         """
         # TODO: Do we want to keep the popularity of messages at each timestep?
         # Or keep a copy of agent's feed (message-popularity) for each timestep?
@@ -418,6 +526,8 @@ class SimSom:
 
                 # make sure ranking order is correct
                 # assert (message_info[0] == messages).all()
+                if sum(ranking) == 0:
+                    return False
                 (message_id,) = random.choices(messages, weights=ranking, k=1)
                 if self.save_newsfeed_message_info:
                     is_chosen = np.zeros(len(messages))
@@ -427,22 +537,99 @@ class SimSom:
             else:
                 # new message
                 self.num_message_unique += 1
+
                 message = Message(
                     id=self.num_message_unique,
+                    user_id=agent["uid"],
                     is_by_bot=agent["bot"],
+                    author_class=agent["class"],
                     phi=self.phi,
-                    appeal_exp=self.appeal_exp,
+                    quality_distr=eval(self.agent_quality_dist),
+                    get_legality=self.modeling_legality,
                 )
 
                 self.all_messages[message.id] = message
                 message_id = message.id
         except Exception as e:
-            self.logger.error(e)
+            self.logger.error(f"Exception in _create_post: {str(e)}")
+            # print(e)
             raise ValueError("Failed to create a new message.")
 
         return message_id
 
-    def update_quality(self):
+    def _halflife_to_survivalprob(self, half_life: int) -> float:
+        """
+        Return a value for the probability of illegal message survival. Survival probability S(t) ~
+        All illegal messages will survive every timestep contingent upon the probability
+        """
+        survival_probability = np.exp(np.log(0.5) / half_life)
+        return survival_probability
+
+    def moderation_step(self) -> None:
+        """
+        Removes illegal/low-quality content every iteration.
+        Illegal messages are deleted from the master list `self.all_messages` & the agent feeds
+        There are y% of posts that survive every `x` iterations, where y=e ^ (- 1/scale * x)
+        """
+
+        removal_actual = list()
+        removal_todo = 0
+        if self.modeling_legality:
+            removal_condition = lambda m: m.legality == "illegal"
+        else:
+            removal_condition = lambda m: m.quality < 0.5
+
+        for mid, m in self.all_messages.items():
+            u = random.random()
+            # if a message is illegal or below the quality threshold, check if it's time to die
+            if removal_condition(m):
+                removal_todo += 1
+                if u > self.survival_prob:
+                    removal_actual.append(mid)
+
+        if self.verbose:
+            self.logger.info(
+                f"-\t removing {len(removal_actual)}/{removal_todo} messages.."
+            )
+        if len(removal_actual) > 0:
+            ## We don't want to remove the metadata of moderated messages (might want to see their exposure cascades)
+            ## Uncomment if we want to remove message from the master list
+            # for message_id in removal_actual:
+            #     _ = self.message_metadata.pop(message_id, "No Key found")
+            #     _ = self.all_messages.pop(message_id, "No Key found")
+
+            # remove from agent feeds
+            for agent_id, newsfeed in self.agent_feeds.items():
+                # only search & remove if the newsfeed is not empty
+                if len(newsfeed[0]) > 0:
+                    self.agent_feeds[agent_id] = self._remove_messages_update_feed(
+                        newsfeed, removal_actual
+                    )
+
+        return
+
+    def _remove_messages_update_feed(
+        self, newsfeed: Tuple[List, List, List], removal_actual: List[int]
+    ) -> Tuple[List, List, List]:
+        """
+        Remove messages from an agent's feed. Return an updated feed, which is a tuple of (ids, popularity)
+        - newsfeed (tuple of lists): the newsfeed to remove messages from
+        - removal_actual (list of ints): ids of messages to remove
+        """
+        # TODO: consider newsfeed type as a np array of shape (3, sigma) instead of tuple of lists
+        messages, no_shares, ages = newsfeed
+        # get index of messages to remove if they're in agent's feed (np.isin returns an array of bool)
+        removal_ids = np.isin(messages, removal_actual).nonzero()[0]
+        if len(removal_ids) > 0:
+            feed = np.vstack(
+                newsfeed
+            )  # the rows are messages, no_shares, ages, respectively
+            updated_feed = np.delete(feed, removal_ids, axis=1)
+            return (updated_feed[0], updated_feed[1], updated_feed[2])
+        else:
+            return newsfeed
+
+    def update_quality(self) -> None:
         """
         Update quality using exponential moving average to ensure stable state at convergence
         Forget the past slowly, i.e., new_quality = 0.8 * avg_quality(at t-1) + 0.2 * current_quality
@@ -456,7 +643,62 @@ class SimSom:
         )
         self.quality = new_quality
 
-    def measure_kendall_tau(self):
+    def update_avg_illegal_frac_infeed(self):
+        """
+        Update mean exposure using exponential moving average to ensure stable state at convergence
+        Forget the past slowly, i.e., new_mean_exposure = 0.8 * avg_no_exposure(at t-1) + 0.2 * current_no_exposure
+
+        np.isclose() function compares two values a and b to determine if they are close to each other.
+        The comparison is based on the following formula:
+        absolute(a - b) <= (atol + rtol * absolute(b))
+        """
+        new_mean_illegal_frac = (
+            self.rho * self.mean_illegal_frac
+            + (1 - self.rho) * self.get_illegal_frac_infeed()
+        )
+        if np.isclose(0, new_mean_illegal_frac, rtol=1e-01, atol=1e-07):
+            if np.isclose(0, self.mean_illegal_frac, rtol=1e-01, atol=1e-07):
+                # Stop simulation since mean_illegal_frac is 0 in 2 consecutive steps
+                self.consecutive_zero_illegal_frac = True
+                self.logger.info(
+                    f"Mean illegal fraction is 0 in 2 consecutive steps (new_mean_illegal_frac={new_mean_illegal_frac}). Stopping simulation."
+                )
+
+        self.illegal_frac_diff = (
+            abs(new_mean_illegal_frac - self.mean_illegal_frac) / self.mean_illegal_frac
+            if self.mean_illegal_frac > 0
+            else 0
+        )
+        self.mean_illegal_frac = new_mean_illegal_frac
+
+    def get_illegal_frac_infeed(self):
+        """
+        Calculates the average fraction of illegal messages in feeds across the system
+        """
+
+        illegal_count = 0
+        total_count = 0
+        # raise error if message legality is null
+        if not list(self.all_messages.values())[0].legality:
+            raise ValueError(
+                "Messages should have non-null legality attribute to model illegal scenarios. Change param `modeling_illegal` to True to include illegal dimension in the model."
+            )
+        illegal_fracs = []
+        for u in self.human_uids:
+            message_ids, _, _ = self.agent_feeds[u]
+            message_ids = list(message_ids)
+            for message_id in message_ids:
+                illegal_count += (
+                    1 if self.all_messages[message_id].legality == "illegal" else 0
+                )
+                total_count += 1
+
+            illegal_frac = illegal_count / total_count if total_count > 0 else 0
+            illegal_fracs += [illegal_frac]
+
+        return np.mean(illegal_fracs)
+
+    def measure_kendall_tau(self) -> Tuple[float, float]:
         """
         Calculates the discriminative power of the system
         (Invoke only after self._return_all_message_info() is called)
@@ -473,10 +715,10 @@ class SimSom:
         idx_ranked = sorted(share_ranked, key=lambda m: m["id"])
         ranking1 = [message["qual_th"] for message in idx_ranked]
         ranking2 = [message["share_th"] for message in idx_ranked]
-        tau, p_value = utils.kendall_tau(ranking1, ranking2)
+        tau, p_value = stats.kendalltau(ranking1, ranking2)
         return tau, p_value
 
-    def measure_average_quality(self):
+    def measure_average_quality(self) -> float:
         """
         Calculates the average quality across human messages in system
         """
@@ -499,7 +741,7 @@ class SimSom:
 
         return total / count if count > 0 else 0
 
-    def measure_diversity(self):
+    def measure_diversity(self) -> int:
         """
         Calculates the diversity of the system using entropy (in terms of unique messages)
         (Invoke only after self._return_all_message_info() is called)
@@ -520,24 +762,31 @@ class SimSom:
         # Note that (np.sum(humanshares)+np.sum(botshares)) !=self.num_messages because a message can be shared multiple times
         return diversity
 
-    def measure_exposure(self):
+    def measure_fraction_illegal_views(self) -> float:
         """
-        Calculate exposure to bad actor messages
+        Calculate exposure to low-quality/illegal messages
         Using Facebook's definition for prevalence of problematic content: = No. Views for that content / Estimated total content view
         """
         # TODO: Measure exposure before or after removal? (If after, we have to ignore those that have been removed)
         total_exposure = 0
-        bad_exposure = 0
+        illegal_exposure = 0
 
         for message_id, message in self.all_messages.items():
-            if message.quality == 0:
-                bad_exposure += len(self.message_metadata[message_id]["seen_by_agents"])
+            if message.legality == "illegal":
+                illegal_exposure += len(
+                    self.message_metadata[message_id]["seen_by_agents"]
+                )
             total_exposure += len(self.message_metadata[message_id]["seen_by_agents"])
 
-        self.exposure = bad_exposure / total_exposure if total_exposure > 0 else 0
+        self.exposure = illegal_exposure / total_exposure if total_exposure > 0 else 0
         return self.exposure
 
-    def _bulk_add_messages_to_feed(self, target_id, incoming_ids, incoming_shares):
+    def _bulk_add_messages_to_feed(
+        self,
+        target_id: str,
+        incoming_ids: np.array(int),
+        incoming_shares: np.array(int),
+    ) -> bool:
         """
         Add message to agent's feed in bulk, forget the oldest if feed size exceeds self.sigma (first in first out)
         If a message to be added is already in the feed, update its popularity and move to beginning of feed (youngest)
@@ -557,9 +806,6 @@ class SimSom:
                     np.zeros(len(incoming_ids), dtype=int),
                 )
             elif len(set(messages) & set(incoming_ids)) > 0:
-                if self.debug:
-                    self.logger.info(f"  ids   : {incoming_ids} -> {messages}")
-                    self.logger.debug(f"  shares: {incoming_shares} -> {no_shares}")
                 updated_feed = self._update_feed_handle_overlap(
                     newsfeed, incoming_ids, incoming_shares
                 )
@@ -588,7 +834,9 @@ class SimSom:
         except Exception as e:
             raise Exception(f"Fail to add messages to {target_id}'s feed", e)
 
-    def _rank_newsfeed(self, newsfeed):
+    def _rank_newsfeed(
+        self, newsfeed: Tuple[List, List, List]
+    ) -> Tuple[List[np.ndarray], np.ndarray]:
         """
         Calculate probability of being reshared for messages in the newsfeed using the formula:
         $$ P(m) = w_ee_m + w_p\frac{p_m}{\sum^{\sigma}_{j\in M_i}p_j} + w_rr_m $$
@@ -614,7 +862,12 @@ class SimSom:
         message_info = np.vstack([messages, appeal, shares, recency, ages, ranking])
         return message_info, ranking
 
-    def _update_feed_handle_overlap(self, target_feed, incoming_ids, incoming_shares):
+    def _update_feed_handle_overlap(
+        self,
+        target_feed: Tuple[List, List, List],
+        incoming_ids: np.array(int),
+        incoming_shares: np.array(int),
+    ) -> Tuple[list, list, list]:
         """
         Update feed with new messages.
         Handle overlapping: if message already exists, reset age to 0. Increment age for the rest of the messages
@@ -628,22 +881,6 @@ class SimSom:
             overlap, x_ind, y_ind = np.intersect1d(
                 messages, incoming_ids, return_indices=True
             )
-            if self.debug:
-                # self.logger.debug(f"incoming ids : {incoming_ids} --> feed: {messages}")
-                # self.logger.debug(f"no_shares : {incoming_shares} --> feed: {no_shares}")
-                self.logger.debug(
-                    f"  incoming age : {np.zeros(len(incoming_ids))} --> feed: {ages}"
-                )
-
-                self.logger.debug(
-                    f"   overlap message between {messages} and {incoming_ids} are: {overlap}"
-                )
-                self.logger.debug(
-                    "   update no_share and age of overlapping messages.. "
-                )
-                self.logger.debug(
-                    f"   before:  messages: {messages}, shares: {no_shares}, ages: {ages}"
-                )
 
             # index the overlap message from 2 arrays
             mask_x, mask_y = np.zeros(len(messages), bool), np.zeros(
@@ -659,25 +896,20 @@ class SimSom:
             # # reset age overlapping messages
             # ages[mask_x] = np.zeros(len(y_ind))
 
-            if self.debug:
-                self.logger.debug(
-                    f"   after:  messages: {messages}, shares: {no_shares}, ages: {ages}"
-                )
             # push new messages into the feed (only the non-overlapping messages)
             no_shares = np.insert(no_shares, 0, incoming_shares[~mask_y])
             messages = np.insert(messages, 0, incoming_ids[~mask_y])
             ages = np.insert(ages, 0, np.zeros(len(incoming_shares[~mask_y])))
-            if self.debug:
-                self.logger.debug(
-                    f"   updated: messages: {messages}, shares: {no_shares}, ages: {ages}"
-                )
+
             updated_feed = messages, no_shares, ages
         except Exception as e:
             raise Exception("Error in handle_overlap: ", e)
 
         return updated_feed
 
-    def _handle_oversized_feed(self, newsfeed):
+    def _handle_oversized_feed(
+        self, newsfeed: Tuple[List, List, List]
+    ) -> Tuple[List, List, List]:
         """
         Handles oversized newsfeed
         Returns the newsfeed (tuple of lists) where the oldest message is removed
@@ -703,7 +935,7 @@ class SimSom:
         #     assert isinstance(i, np.ndarray)
         return updated_feed
 
-    def _return_all_message_info(self):
+    def _return_all_message_info(self) -> List[dict]:
         """
         Combine message attributes (quality, appeal) with popularity data (spread_via_agents, seen_by_agents, etc.)
         Return a list of dict, where each dict contains message metadata
@@ -714,7 +946,7 @@ class SimSom:
             message_dict.update(self.message_metadata[message_dict["id"]])
         return messages
 
-    def _update_reshares(self, message, source, target):
+    def _update_reshares(self, message: int, source: str, target: str) -> None:
         """
         Update the reshare cascade information to a file is `self.output_cascades`==True
         Input:
@@ -729,7 +961,7 @@ class SimSom:
 
         return
 
-    def _update_exposure(self, feed, agent):
+    def _update_exposure(self, feed: List[int], agent: ig.Vertex) -> None:
         """
         Update human's exposure to message whenever an agent is activated (equivalent to logging in)
         (when flag self.output_cascades is True)
@@ -747,7 +979,7 @@ class SimSom:
 
         return
 
-    def _update_message_popularity(self, message_id, agent):
+    def _update_message_popularity(self, message_id: int, agent: ig.Vertex) -> None:
         """
         Update information of a message whenever it is reshared.
         Input:
@@ -756,9 +988,8 @@ class SimSom:
         """
 
         if message_id not in self.message_metadata.keys():
-            # "agent_id": agent who first reshared this message (also creator)
             self.message_metadata[message_id] = {
-                "agent_id": agent["uid"],
+                # "agent_id": agent["uid"],
                 # "is_by_bot": message.is_by_bot,
                 "human_shares": 0,
                 "bot_shares": 0,
@@ -775,30 +1006,39 @@ class SimSom:
             self.message_metadata[message_id]["bot_shares"] += self.theta
         return
 
-    def __repr__(self):
+    def __repr__(self) -> None:
         """
         Define the representation of the object.
         """
-        bot_params = "\n".join(
-            [
-                f" Network of humans and bots",
-                f"Bot paramters:",
-                f" - phi (deception): {self.phi}",
-                f" - theta (flooding):{self.theta}",
-            ]
-        )
 
-        return "\n".join(
-            [
-                f"<{self.__class__.__name__}() object> constructed from {self.graph_gml}",
-                f"Simulation controls:",
-                f" - epsilon: {self.epsilon}",
-                f" - rho:     {self.rho}",
-                f" - converge_by: {self.converge_by} - keep running while: {self.converge_condition} - max_steps:{self.max_steps}"
-                f"\nPropagation parameters:",
-                f" - mu (posting rate): {self.mu}",
-                f" - sigma (feedsize):  {self.sigma}",
-                f"Network contains one type of agents (no bots): {self.is_human_only}",
-                f"{bot_params}",
-            ]
-        )
+        arg_type = {
+            "system_params": [
+                "epsilon",
+                "rho",
+                "sigma",
+                "mu",
+                "converge_condition",
+                "max_steps",
+            ],
+            "bot_params": ["phi", "theta"],
+            "moderation_params": [
+                "modeling_legality",
+                "moderate",
+                "moderation_half_life",
+            ],
+            "simulation_params": [
+                "n_threads",
+                "verbose",
+                "logger",
+                "tracktimestep",
+                "save_message_info",
+                "output_cascades",
+            ],
+        }
+
+        rep_string = []
+        for arg_group, arg_list in arg_type.items():
+            rep_string.append(f"{arg_group}:")
+            for arg in arg_list:
+                rep_string.append(f" - {arg}: {self.__dict__[arg]}")
+        return "\n".join(rep_string)

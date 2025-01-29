@@ -1,12 +1,13 @@
-""" Script to run simulation(s)
-    Parse command-line arguments specifying simulation parameters and output file paths 
-    Run simulation(s)
+""" 
+Script to run simulation(s)
+Parse command-line arguments specifying simulation parameters and output file paths 
+Run simulation(s)
 
-    Reshare output file (.csv) and verbose tracking file (.json.gz) names are always suffixed by number of runs 
-    e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.json.gz"
+Reshare output file (.csv) and verbose tracking file (.json.gz) names are always suffixed by number of runs 
+e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.json.gz"
 """
 
-from simsom import SimSom
+from simsom import SimSomMod
 import simsom.utils as utils
 import sys
 import argparse
@@ -15,42 +16,55 @@ import numpy as np
 import copy
 from collections import defaultdict
 import os
+from datetime import datetime
 
 
 def multiple_simulations(
-    infosys_specs, times=1, reshare_fpath="reshares.csv", verboseout=None
+    infosys_specs,
+    logger,
+    times=1,
+    reshare_fpath="reshares.csv",
+    verboseout=None,
 ):
-    # baseline:  mu=0.5, alpha=15, beta=0.01, gamma=0.001, phi=1, theta=1
+    # baseline:  mu=0.5, sigma=15, beta=0.01, gamma=0.001, phi=1, theta=1
     # cascade data file name has format: f"{basedir}{exp_name}__{cascade_type}_{run_no}.csv"
     metrics = ["quality", "diversity", "discriminative_pow"]
     n_measures = defaultdict(lambda: [])
 
-    print(f"Run simulation {times} times..")
+    logger.info(f"Run simulation {times} times..")
     for time in range(times):
-        print(f"**{time+1}/{times}**")
+        logger.info(f"**{time+1}/{times}**")
         try:
-            print("Create SimSom instance..")
-            follower_sys = SimSom(**infosys_specs)
-            print("Start simulation ..")
-            # Tracking cascade info
+            logger.info("Create SimSomMod instance..")
+            follower_sys = SimSomMod(**infosys_specs, logger=logger)
+            if time == 0:
+                logger.info(f"Parameters: {follower_sys.__repr__()}")
+            logger.info("Start simulation ..")
+            # Tracking cascade info, files named by no.run
             if infosys_specs["output_cascades"] is True:
-                reshare_fpath = reshare_fpath.replace(
-                    ".csv", f"_{time}.csv"
-                )  # named by no.run
-            measurements = follower_sys.simulation(reshare_fpath=reshare_fpath)
+                n_reshare_fpath = (
+                    reshare_fpath.replace(".csv", f"_{time}.csv")
+                    if time > 0
+                    else reshare_fpath
+                )
+            else:
+                n_reshare_fpath = reshare_fpath
+            measurements = follower_sys.simulation(reshare_fpath=n_reshare_fpath)
 
         except Exception as e:
             raise Exception("Failed to run simulations.", e)
 
         try:
-            # Save verbose results
+            # Save verbose results, files named by no.run
             if verboseout is not None:
-                verboseout_path = verboseout.replace(
-                    ".json.gz", f"_{time}.json.gz"
-                )  # named by no.run
+                n_verboseout = (
+                    verboseout.replace(".json.gz", f"_{time}.json.gz")
+                    if time > 0
+                    else verboseout
+                )
                 specs = copy.deepcopy(infosys_specs)
                 specs.update(measurements)
-                utils.write_json_compressed(verboseout_path, specs)
+                utils.write_json_compressed(n_verboseout, specs)
 
         except Exception as e:
             raise ("Error saving verbose results", e)
@@ -59,27 +73,29 @@ def multiple_simulations(
         for metric in metrics:
             n_measures[metric] += [measurements[metric]]
 
-    print(
-        f"average quality for follower network: {np.mean(np.array(n_measures['quality']))} pm {np.std(np.array(n_measures['quality']))}"
+    logger.info(
+        f"average quality for follower network: %s pm %s",
+        np.mean(np.array(n_measures["quality"])),
+        np.std(np.array(n_measures["quality"])),
     )
 
     # return a short version of measurements
     return dict(n_measures)
 
 
-def run_simulation(infosys_specs, reshare_fpath="reshares.csv"):
-    # baseline:  mu=0.5, alpha=15, beta=0.01, gamma=0.001, phi=1, theta=1
-    print("Create SimSom instance..")
-    follower_sys = SimSom(**infosys_specs)
-    print(f"Start simulation..")
+def run_simulation(infosys_specs, logger, reshare_fpath="reshares.csv"):
+    # baseline:  mu=0.5, sigma=15, beta=0.01, gamma=0.001, phi=1, theta=1
+    logger.info("Create SimSomMod instance..")
+    follower_sys = SimSomMod(**infosys_specs)
+    logger.info(f"Start simulation..")
     measurements = follower_sys.simulation(reshare_fpath=reshare_fpath)
-    print("average quality for follower network:", measurements["quality"])
+    logger.info("average quality for follower network:", measurements["quality"])
     return measurements
 
 
 def main(args):
     parser = argparse.ArgumentParser(
-        description="run simulation on an igraph instance of SimSom",
+        description="run simulation on an igraph instance of SimSomMod",
     )
 
     parser.add_argument(
@@ -146,10 +162,13 @@ def main(args):
     args = parser.parse_args(args)
     infile = args.infile
     outfile = args.outfile
-    reshare_fpath = (
-        args.resharefpath if args.resharefpath is not None else "reshares.csv"
-    )
     verboseout = args.verboseoutfile
+    reshare_default_path = f"{os.path.dirname(verboseout)}/cascades"
+    reshare_fpath = (
+        args.resharefpath
+        if args.resharefpath is not None
+        else f"{reshare_default_path}/{os.path.basename(outfile).replace('.json',f'.reshares.csv')}"
+    )
     configfile = args.config
     n_simulations = args.times
 
@@ -158,11 +177,28 @@ def main(args):
     if args.nthreads is not None:
         infosys_spec["n_threads"] = int(args.nthreads)
 
+    ## LOGGING
+    log_dir = f"{os.path.dirname(outfile)}/logs"
+    # Use formatted current date and time as logging file name
+    current_datetime = datetime.now()
+    formatted_datetime = current_datetime.strftime("%Y-%m-%d.%H%M%S")
+
+    logger = utils.get_file_logger(
+        log_dir=log_dir,
+        full_log_path=os.path.join(
+            log_dir,
+            f"{os.path.basename(outfile).replace('.json',f'__{formatted_datetime}.log')}",
+        ),
+        also_print=True,
+    )
     # avoid passing undefined keyword to InfoSys
-    legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSom.__init__)
+    legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSomMod.__init__)
+
+    logger.info("Finished parsing arguments. Running simulation.. ")
 
     nruns_measurements = multiple_simulations(
         legal_specs,
+        logger=logger,
         times=int(n_simulations),
         reshare_fpath=reshare_fpath,
         verboseout=verboseout,
@@ -170,11 +206,14 @@ def main(args):
     # add infosys configuration
     infosys_spec.update(nruns_measurements)
 
+    logger.info("Saving short results.. ")
     # save even empty results so smk don't complain
     fout = open(outfile, "w")
     json.dump(infosys_spec, fout)
     fout.flush()
     fout.close()
+
+    logger.info("Done!")
 
 
 if __name__ == "__main__":
