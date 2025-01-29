@@ -1,11 +1,13 @@
-# SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cial <ins>M</ins>edia
+# Explore the effects of takedown delay on the persistence of illegal content
 
-This repository contains code to reproduce the results in the paper [*Quantifying the Vulnerabilities of the Online Public Square to Adversarial Manipulation Tactics*](https://academic.oup.com/pnasnexus/article/3/7/pgae258/7701371) by [Bao Tran Truong](https://btrantruong.github.io/), Xiaodan Lou, [Alessandro Flammini](https://cnets.indiana.edu/aflammin/), and [Filippo Menczer](https://cnets.indiana.edu/fil/).
+This repository contains code to reproduce the results in the paper ``Delayed takedown of illegal content on social media makes moderation ineffective''.
+
+The model is an extension of [SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cial <ins>M</ins>edia](https://github.com/osome-iu/SimSoM/)
 
 ## Overview of the repo
 1. `data`: contains raw & derived datasets
 2. `example`: contains a minimal example to start using the SimSoM model
-3. `libs`: contains the SimSoM model package that can be imported into scripts
+3. `libs`: contains the extended SimSoM model package that can be imported into scripts
 4. `report_figures`: experiment results, supplementary data and .ipynb noteboooks to produce figures reported in the paper
 5. `workflow`: scripts to run simulation and Snakemake rules to run sets of experiments
 
@@ -42,10 +44,10 @@ Check out `example` to get started.
 ### Reproduce results from the paper:
 
 1. From the root directory, unzip the data file: `unzip data/data.zip -d .`
-2. Create config files specifying parameters for simulations: `workflow/scripts/make_finalconfig.py`
+2. Create config files specifying parameters for simulations: `workflow/scripts/make_config.py`
     - See `example/data/config.json` for example of a config file
 3. Run a Snakemake rule corresponding to the simulations of interest. 
-    - e.g.: `workflow/rules/shuffle_network.smk` runs simulations on different shuffled versions of the empirical network
+    - e.g.: `workflow/rules/vary_tau.smk` reproduces the main results by varying tau, the illegal content half-life parameter.
 
 ### Notes
 The results in the paper are based on averages across multiple simulation runs. To reproduce those results, we suggest running the simulations in parallel, for example on a cluster, since they will need a lot of memory and CPU time.
