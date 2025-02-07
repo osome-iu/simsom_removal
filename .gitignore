@@ -4,15 +4,14 @@
 __pycache__/
 .vs_code/
 simsom.egg-info/
-unused_experiments/*
 example/results/
 data/
 
 .snakemake/
-*exps*/
-*.out
-experiments/*
-example/*v*
 
 logs/
 tests/
+
+report_figures_new/
+workflow/rules_new/
+report_figures/

@@ -13,13 +13,15 @@ The model is an extension of [SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cia
 
 ## Install 
 
-- This code is written and tested with **Python>=3.6**
-- We use `conda`, a package manager to manage the development environment. Please make sure you have [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html#regular-installation) or [mamba](https://mamba.readthedocs.io/en/latest/installation.html#) installed on your machine
+(This code is written and tested with **Python>=3.6**)
 
-### Using Make (recommended)
+### 1. Using Make (recommended)
 
 To set up the environment and install the model: run `make` from the project directory (`SimSoM`)
-### Using Conda
+
+### 2. Using Conda
+
+We use `conda`, a package manager to manage the development environment. Please make sure you have [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html#regular-installation) or [mamba](https://mamba.readthedocs.io/en/latest/installation.html#) installed on your machine
 
 1. Create the environment with required packages: run `conda env create -n simsom -f environment.yml` to 
 2. Install the `SimSoM` module: 
