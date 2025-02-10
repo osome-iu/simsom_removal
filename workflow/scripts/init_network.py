@@ -6,6 +6,7 @@ import sys
 import argparse
 import json
 import igraph
+import os
 from simsom.network import (
     HumanBotNetwork,
     IllegalActivityNetwork,
@@ -66,6 +67,9 @@ def main(args):
         args.infile
     )  # infile is a json containing list of {"beta": 0.0, "gamma": 0.0}
     outfile = args.outfile
+    # make sure directory exists to save file
+    if not os.path.exists(os.path.dirname(outfile)):
+        os.makedirs(os.path.dirname(outfile))
     configfile = args.config
     mode = args.mode
 

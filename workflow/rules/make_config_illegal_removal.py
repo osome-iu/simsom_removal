@@ -25,7 +25,7 @@ def save_config_to_subdir(config, config_name, saving_dir, exp_type):
     json.dump(config, open(os.path.join(output_dir, f"{config_name}.json"), "w"))
 
 
-def make_exps(saving_dir, default_config):
+def make_exps(saving_dir, default_config, network_dir):
     """
     Create configs for exps
     Outputs:
@@ -47,7 +47,7 @@ def make_exps(saving_dir, default_config):
 
         # with moderation
         cf = {
-            "infosys_gml_fpath": network_name,
+            "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
             "quality_settings": default_config["quality_settings"],
             "moderation_half_life": moderation_scale,
             "moderate": True,
@@ -78,7 +78,7 @@ def make_exps(saving_dir, default_config):
             network_name = f"groupsize_{str(highrisk_frac)}"
             # with moderation
             cf = {
-                "infosys_gml_fpath": network_name,
+                "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
                 "quality_settings": network_config,
                 "moderation_half_life": moderation_scale,
                 "moderate": True,
@@ -99,7 +99,7 @@ def make_exps(saving_dir, default_config):
 
     ##### ROBUSTNESS - VARY ILLEGAL CONTENT PROBABILITY #####
 
-    EXP_TYPE = "vary_illegal_prob"
+    EXP_TYPE = "vary_illegal_probability"
     TAUS = [2, 8]
     all_exps[EXP_TYPE] = {}
 
@@ -111,7 +111,7 @@ def make_exps(saving_dir, default_config):
             )
             # with moderation
             cf = {
-                "infosys_gml_fpath": network_name,
+                "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
                 "quality_settings": network_config,
                 "moderation_half_life": moderation_scale,
                 "moderate": True,
@@ -140,7 +140,9 @@ def make_exps(saving_dir, default_config):
             illegal_frac = net_config["quality_settings"]["total_illegal_frac"]
             # with moderation
             cf = {
-                "infosys_gml_fpath": f"{net_name}_{illegal_frac}",
+                "infosys_gml_fpath": os.path.join(
+                    network_dir, EXP_TYPE, f"{net_name}_{illegal_frac}"
+                ),
                 "moderation_half_life": moderation_scale,
                 "moderate": True,
             }
@@ -166,8 +168,11 @@ def make_exps(saving_dir, default_config):
 
 
 if __name__ == "__main__":
-    out_dir = sys.argv[1]
-    if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
-    print("Generating configs for experiments")
-    make_exps(out_dir, configs.INFOSYS_DEFAULT)
+    config_dir = sys.argv[1]
+    network_dir = sys.argv[2]
+
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir)
+    print("Generating configs for experiments.. ")
+    make_exps(config_dir, configs.INFOSYS_DEFAULT, network_dir)
+    print(f"Saved all configs to {config_dir}")
