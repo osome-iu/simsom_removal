@@ -197,7 +197,7 @@ def main(args):
             create_network_file(configfile, follower_network_fpath, infosys_gml_fpath)
         except Exception as e:
             raise Exception("Failed to create infosys .gml file", e)
-        sys.exit(1)
+            sys.exit(1)
 
     infosys_spec["graph_gml"] = infosys_gml_fpath
     if args.nthreads is not None:

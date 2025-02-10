@@ -5,6 +5,7 @@ import sys
 
 if __name__ == "__main__":
     exp_type = sys.argv[1]
+    config_dir = sys.argv[2]
     exp_types = [
         "vary_tau",
         "vary_group_size",
@@ -14,19 +15,10 @@ if __name__ == "__main__":
     if exp_type not in exp_types:
         raise ValueError(f"Invalid experiment type. Choose from {str(exp_types)}")
 
-    ABS_PATH = f"experiments/{exp_type}"
-
-    CONFIG_DIR = f"{ABS_PATH}/config"
-
-    # Generate configurations
-    subprocess.run(
-        f"python3 workflow/rules/make_config_illegal_removal.py {CONFIG_DIR}",
-        shell=True,
-        check=True,
-    )
+    ABS_PATH = f"{os.path.dirname(config_dir)}/{exp_type}"
 
     # Run exps based on configurations
-    config_fname = os.path.join(CONFIG_DIR, "all_configs.json")
+    config_fname = os.path.join(config_dir, "all_configs.json")
     EXPS = json.load(open(config_fname, "r"))[exp_type]
     # Specify number of runs and number of threads to use
     sim_num = 1
@@ -41,11 +33,11 @@ if __name__ == "__main__":
 
     # Example usage
     for exp_idx, exp_config in EXPS.items():
-        exp_config_fpath = os.path.join(CONFIG_DIR, exp_type, f"{exp_idx}.json")
+        exp_config_fpath = os.path.join(config_dir, exp_type, f"{exp_idx}.json")
         measurements = os.path.join(RES_DIR, f"{exp_idx}.json")
         tracking = os.path.join(TRACKING_DIR, f"{exp_idx}.json.gz")
         print(
             f"Running exp with -o {measurements} -v {tracking} --config {exp_config_fpath} --times {sim_num} --nthreads {nthreads}"
         )
-        # cmd = f"python3 workflow/scripts/driver.py -i {network} -o {measurements} -v {tracking} --config {exp_config_fpath} --times {sim_num} --nthreads {nthreads}"
-        # subprocess.run(cmd, shell=True, check=True)
+        cmd = f"python3 workflow/scripts/driver.py -o {measurements} -v {tracking} --config {exp_config_fpath} --times {sim_num} --nthreads {nthreads}"
+        subprocess.run(cmd, shell=True, check=True)
