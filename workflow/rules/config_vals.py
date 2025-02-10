@@ -1,12 +1,10 @@
 """
 Default values and range of parameter swipe
-All agents in the network are the same and have equal probability of spreading illegal content. 
 """
 
 import numpy as np
 
-follower_network = "follower_network.gml"
-mode = "igraph"
+follower_network = "data/follower_network.gml"
 
 ##### DEFAULT VALUES #####
 ## diffusion/network
@@ -104,11 +102,24 @@ ILLEGAL_PROBABILITY_VALS = [
     },
 ]
 
-##### ROBUSTNESS - VARY NETWORK TYPE #####
-
+# Total illegal content fraction=0.1
+SYNTHETIC_NET = {
+    "follower_network_fpath": None,
+    "activity_differential": DEFAULT_ACTIVITY_DIFF,
+    "net_size": 10006,
+    "p": 0.5,
+    "k_out": 181,
+    "quality_settings": {
+        "attributes": ["illegal", "normal"],
+        "sizes": [10, 90],
+        "total_illegal_frac": 0.01,
+        "qualitydistr": {"illegal": (3, 30, 0, 1), "normal": (0.1, 89.9, 0, 1)},
+    },
+}
 
 # NOTE: Convergence by illegal frac since that's the quantity of interest
 INFOSYS_DEFAULT = {
+    # Simulation settings
     "verbose": False,
     "output_cascades": False,
     "epsilon": DEFAULT_EPSILON,
@@ -121,11 +132,8 @@ INFOSYS_DEFAULT = {
     "moderation_half_life": DEFAULT_HALFLIFE,
     "modeling_legality": True,
     "converge_by": "illegal_frac",
-}
-
-# Total illegal content fraction=0.1
-DEFAULT_NETWORK = {
-    "follower_network_fpath": follower_network,  # TODO: refractor igraph_fpath-> follower_network_fpath
+    # Network settings. Total illegal content fraction=0.1
+    "follower_network_fpath": follower_network,
     "activity_differential": DEFAULT_ACTIVITY_DIFF,
     "quality_settings": {
         "attributes": ["illegal", "normal"],
@@ -134,3 +142,7 @@ DEFAULT_NETWORK = {
         "qualitydistr": {"illegal": (3, 30, 0, 1), "normal": (0.1, 89.9, 0, 1)},
     },
 }
+
+##### ROBUSTNESS - VARY NETWORK TYPE #####
+
+NETWORK_VALS = {"synthetic": SYNTHETIC_NET, "empirical": INFOSYS_DEFAULT}
