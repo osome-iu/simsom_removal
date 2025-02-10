@@ -17,6 +17,7 @@ import copy
 from collections import defaultdict
 import os
 from datetime import datetime
+import subprocess
 
 
 def multiple_simulations(
@@ -74,9 +75,7 @@ def multiple_simulations(
             n_measures[metric] += [measurements[metric]]
 
     logger.info(
-        f"average quality for follower network: %s pm %s",
-        np.mean(np.array(n_measures["quality"])),
-        np.std(np.array(n_measures["quality"])),
+        f'average quality for follower network: {np.mean(np.array(n_measures["quality"]))} pm {np.std(np.array(n_measures["quality"]))}',
     )
 
     # return a short version of measurements
@@ -93,19 +92,18 @@ def run_simulation(infosys_specs, logger, reshare_fpath="reshares.csv"):
     return measurements
 
 
+def create_network_file(config_fpath, in_fpath, out_fpath):
+    # Create infosys network file from follower network file
+    cmd = f"python3 -m workflow.scripts.init_network -i {in_fpath} -o {out_fpath} --config {config_fpath} --mode illegal"
+    subprocess.run(cmd, shell=True, check=True)
+    print(
+        f"Infosys network created with infile {in_fpath} and {config_fpath} at {out_fpath}."
+    )
+
+
 def main(args):
     parser = argparse.ArgumentParser(
         description="run simulation on an igraph instance of SimSomMod",
-    )
-
-    parser.add_argument(
-        "-i",
-        "--infile",
-        action="store",
-        dest="infile",
-        type=str,
-        required=True,
-        help="path to input gml file of network",
     )
     parser.add_argument(
         "-o",
@@ -160,7 +158,6 @@ def main(args):
     )
 
     args = parser.parse_args(args)
-    infile = args.infile
     outfile = args.outfile
     verboseout = args.verboseoutfile
     reshare_default_path = f"{os.path.dirname(verboseout)}/cascades"
@@ -171,11 +168,6 @@ def main(args):
     )
     configfile = args.config
     n_simulations = args.times
-
-    infosys_spec = json.load(open(configfile, "r"))
-    infosys_spec["graph_gml"] = infile
-    if args.nthreads is not None:
-        infosys_spec["n_threads"] = int(args.nthreads)
 
     ## LOGGING
     log_dir = f"{os.path.dirname(outfile)}/logs"
@@ -191,6 +183,26 @@ def main(args):
         ),
         also_print=True,
     )
+
+    infosys_spec = json.load(open(configfile, "r"))
+    # Check if infosys_graph exists, if not create it
+    infosys_gml_fpath = infosys_spec["infosys_gml_fpath"]
+
+    if not os.path.exists(infosys_gml_fpath):
+        logger.info(
+            f"Infosys .gml file {infosys_gml_fpath} does not exist. Creating..."
+        )
+        try:
+            follower_network_fpath = infosys_spec["follower_network_fpath"]
+            create_network_file(configfile, follower_network_fpath, infosys_gml_fpath)
+        except Exception as e:
+            raise Exception("Failed to create infosys .gml file", e)
+        sys.exit(1)
+
+    infosys_spec["graph_gml"] = infosys_gml_fpath
+    if args.nthreads is not None:
+        infosys_spec["n_threads"] = int(args.nthreads)
+
     # avoid passing undefined keyword to InfoSys
     legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSomMod.__init__)
 
