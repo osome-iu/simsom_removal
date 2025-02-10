@@ -70,15 +70,15 @@ def main(args):
     mode = args.mode
 
     net_spec = json.load(open(configfile, "r"))
-    if net_spec["igraph_fpath"] is not None:
+    if net_spec["follower_network_fpath"] is not None:
         if infile is not None:
             print(
                 f"! Infile specified in config file. Overwriting with infile argument:{infile}"
             )
-            net_spec.update({"igraph_fpath": infile})
+            net_spec.update({"follower_network_fpath": infile})
         else:
             print(
-                f"! Infile not specified. Using infile from config file: {net_spec['igraph_fpath']}"
+                f"! Infile not specified. Using infile from config file: {net_spec['follower_network_fpath']}"
             )
 
     # print(net_spec)
