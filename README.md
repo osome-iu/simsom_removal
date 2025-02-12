@@ -51,7 +51,7 @@ All scripts are run from the project root directory, `simsom_removal`
 We are interested in the prevalence of illegal content and engagement metrics such as reach and impressions. To aggregate these metrics, we need to parse the experiment verbose tracking files. 
 To parse these files, run:
 - For reach and impressions: `python workflow/scripts/read_data_engagement.py --result_path experiments/<experiment_name> --out_path experiments/results/<experiment_name>` 
-- For prevalence of illegal content: `python read_data_illegal_count.py --result_path experiments/<experiment_name> --out_path experiments/figures/<experiment_name>`
+- For prevalence of illegal content: `python read_data_illegal_count.py --result_path experiments/<experiment_name> --out_path experiments/results/<experiment_name>`
 
 ### 3. Plot results 
 - Run the notebooks in `experiments/figures` to visualize the experiment results in the paper 
