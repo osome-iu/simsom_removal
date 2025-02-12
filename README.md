@@ -70,7 +70,7 @@ where:
 - `measures.tab` contains user information, i.e., one's partisanship and misinformation score. 
 - `anonymized-friends.json` is the adjacency list. 
 
-We reconstruct the empirical network from the above 2 files, resulting in `data/follower_network.gml`. The steps are specified in the [script to create empirical network](workflow/make_network.py)
+We reconstruct the empirical network from the above 2 files, resulting in `data/follower_network.gml`. The steps are specified in the [script to create empirical network]([workflow/scripts/make_network.py)
 
 ### Step-by-step instruction and example of running SimSoM
 
