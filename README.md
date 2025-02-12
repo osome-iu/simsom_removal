@@ -28,7 +28,10 @@ We use `conda`, a package manager to manage the development environment. Please 
     - activate virtualenv: `conda activate simsom`
     - run `pip install -e ./libs/`
 
-## 2. Reproduce results from the paper
+## 2. Plot results 
+Run the notebooks in `experiments/figures` to visualize the experiment results in the paper 
+
+## 3. Reproduce results from the paper
 
 All scripts are run from the project root directory, `simsom_removal`
 
@@ -52,9 +55,6 @@ We are interested in the prevalence of illegal content and engagement metrics su
 To parse these files, run:
 - For reach and impressions: `python workflow/scripts/read_data_engagement.py --result_path experiments/<experiment_name> --out_path experiments/results/<experiment_name>` 
 - For prevalence of illegal content: `python read_data_illegal_count.py --result_path experiments/<experiment_name> --out_path experiments/results/<experiment_name>`
-
-### 3. Plot results 
-- Run the notebooks in `experiments/figures` to visualize the experiment results in the paper 
 
 ## Other notes
 
