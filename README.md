@@ -35,7 +35,7 @@ Run the notebooks in `experiments/figures` to visualize the experiment results i
 ## 3. Reproduce results from scratch
 
 The steps to reproduce the results from scratch, rather than using the provided results in `experiments/results`, are outlined below. 
-!! Following these steps will overwrite the content of `experiments/results`.
+Warning: following these steps will overwrite the content of `experiments/results`.
 All scripts are run from the project root directory, `simsom_removal`
 
 ### 3.1. Run experiments 
@@ -44,6 +44,7 @@ All scripts are run from the project root directory, `simsom_removal`
 3.1.2. Automatically run all experiments to reproduce the results in the paper by running 2 commands:
 - make file executable: `chmod +x workflow/rules/run_experiment.sh` 
 - run shell script: `workflow/rules/run_experiments.sh`
+  
 This script does 2 things 
 - Create configuration folders for all experiments (see `experiments/config` for the results of this step)
 - Run the `run_exps.py` script with an argument to specify the experiment to run: 
