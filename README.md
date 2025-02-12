@@ -23,10 +23,11 @@ Run `make` from the project directory (`SimSoM`)
 
 We use `conda`, a package manager to manage the development environment. Please make sure you have [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html#regular-installation) or [mamba](https://mamba.readthedocs.io/en/latest/installation.html#) installed on your machine
 
-1.2.1. Create the environment with required packages: run `conda env create -n simsom -f environment.yml` 
+1.2.1. Create the environment with required packages: run `conda env create -n simsom -f environment.yml`
+
 1.2.2. Install the `SimSoM` module: 
-    - activate virtualenv: `conda activate simsom`
-    - run `pip install -e ./libs/`
+- activate virtualenv: `conda activate simsom`
+- run `pip install -e ./libs/`
 
 ## 2. Plot results from the paper
 Run the notebooks in `experiments/figures` to visualize the experiment results in the paper 
@@ -39,18 +40,17 @@ All scripts are run from the project root directory, `simsom_removal`
 
 ### 3.1. Run experiments 
 3.1.1. Unzip the data file: `unzip data/data.zip -d .`
+
 3.1.2. Automatically run all experiments to reproduce the results in the paper by running 2 commands:
-    - make file executable: `chmod +x workflow/rules/run_experiment.sh` 
-    - run shell script: `workflow/rules/run_experiments.sh`
-
-    This script does 2 things 
-    - Create configuration folders for all experiments (see `experiments/config` for the results of this step)
-
-    - Run the `run_exps.py` script with an argument to specify the experiment to run: 
-        - vary_tau: main results
-        - vary_group_size: robustness check for varying group sizes
-        - vary_illegal_probability: robustness check for varying illegal probabilities 
-        - vary_network_type: robustness check for varying network structures
+- make file executable: `chmod +x workflow/rules/run_experiment.sh` 
+- run shell script: `workflow/rules/run_experiments.sh`
+This script does 2 things 
+- Create configuration folders for all experiments (see `experiments/config` for the results of this step)
+- Run the `run_exps.py` script with an argument to specify the experiment to run: 
+  - vary_tau: main results
+  - vary_group_size: robustness check for varying group sizes
+  - vary_illegal_probability: robustness check for varying illegal probabilities
+  - vary_network_type: robustness check for varying network structures
 
 ### 3.2. Parse experiment data 
 We are interested in the prevalence of illegal content and engagement metrics such as reach and impressions. To aggregate these metrics, we need to parse the experiment verbose tracking files. 
