@@ -7,8 +7,8 @@ The model is an extension of [SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cia
 ## Overview of the repo
 1. `data`: contains raw & derived datasets
 2. `example`: contains a minimal example to start using the SimSoM model
-3. `libs`: contains the extended SimSoM model package that can be imported into scripts
-4. `experiments`: experiment configurations, results, supplementary data and .ipynb noteboooks to produce figures reported in the paper
+3. `experiments`: experiment configurations, results, supplementary data and .ipynb noteboooks to produce figures reported in the paper
+4. `libs`: contains the extended SimSoM model package that can be imported into scripts
 5. `workflow`: scripts to run experiments
 
 ## 1. Install SimSoM
@@ -23,17 +23,17 @@ Run `make` from the project directory (`SimSoM`)
 
 We use `conda`, a package manager to manage the development environment. Please make sure you have [conda](https://conda.io/projects/conda/en/latest/user-guide/install/index.html#regular-installation) or [mamba](https://mamba.readthedocs.io/en/latest/installation.html#) installed on your machine
 
-1. Create the environment with required packages: run `conda env create -n simsom -f environment.yml` to 
+1. Create the environment with required packages: run `conda env create -n simsom -f environment.yml` 
 2. Install the `SimSoM` module: 
     - activate virtualenv: `conda activate simsom`
     - run `pip install -e ./libs/`
 
-## 2. Reproduce results from the paper:
+## 2. Reproduce results from the paper
 
 All scripts are run from the project root directory, `simsom_removal`
 
 ### 1. Run experiments 
-1. From the root directory, unzip the data file: `unzip data/data.zip -d .`
+1. Unzip the data file: `unzip data/data.zip -d .`
 2. Automatically run all experiments to reproduce the results in the paper by running 2 commands:
     - make file executable: `chmod +x workflow/rules/run_experiment.sh` 
     - run shell script: `workflow/rules/run_experiments.sh`
