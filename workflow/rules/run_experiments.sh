@@ -34,9 +34,3 @@ for exp in "${EXPS[@]}"; do
   echo "** Run exp $exp **"
   python3 workflow/rules/run_exps.py "$exp" "$CONFIG_DIR"
 done
-
-# echo "Run "
-# python3 workflow/rules/run_exps.py vary_tau $CONFIG_DIR
-# python3 workflow/rules/run_exps.py vary_group_size $CONFIG_DIR
-# python3 workflow/rules/run_exps.py vary_illegal_probability $CONFIG_DIR
-# python3 workflow/rules/run_exps.py vary_network_type $CONFIG_DIR
