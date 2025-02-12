@@ -9,8 +9,6 @@ e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.js
 Date: Feb 10, 2025
 Author: Bao Truong
 
-"""
-
 from simsom import SimSomMod
 import simsom.utils as utils
 import sys
@@ -38,7 +36,6 @@ def multiple_simulations(
 
     # avoid passing undefined keyword to InfoSys
     infosys_specs = utils.remove_illegal_kwargs(exp_specs, SimSomMod.__init__)
-
     logger.info(f"Run simulation {times} times..")
     for time in range(times):
         logger.info(f"**{time+1}/{times}**")
@@ -82,12 +79,10 @@ def multiple_simulations(
             n_measures[metric] += [measurements[metric]]
 
     logger.info(
-        f'average quality for follower network: {np.mean(np.array(n_measures["quality"]))} pm {np.std(np.array(n_measures["quality"]))}',
-    )
+        f'average quality for follower network: {np.mean(np.array(n_measures["quality"]))} pm {np.std(np.array(n_measures["quality"]))}')
 
     # return a short version of measurements
     return dict(n_measures)
-
 
 def run_simulation(exp_specs, logger, reshare_fpath="reshares.csv"):
     # baseline:  mu=0.5, sigma=15, beta=0.01, gamma=0.001, phi=1, theta=1
@@ -99,15 +94,13 @@ def run_simulation(exp_specs, logger, reshare_fpath="reshares.csv"):
     measurements = follower_sys.simulation(reshare_fpath=reshare_fpath)
     logger.info("average quality for follower network:", measurements["quality"])
     return measurements
-
-
+  
 def create_network_file(config_fpath, in_fpath, out_fpath):
     # Create infosys network file from follower network file
     cmd = f"python3 -m workflow.scripts.init_network -i {in_fpath} -o {out_fpath} --config {config_fpath} --mode illegal"
     subprocess.run(cmd, shell=True, check=True)
     print(
         f"Infosys network created with infile {in_fpath} and {config_fpath} at {out_fpath}."
-    )
 
 
 def main(args):

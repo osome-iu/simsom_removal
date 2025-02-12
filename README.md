@@ -75,5 +75,6 @@ Check out `example` to get started.
 
 ### Troubleshooting
 
+
 - SimSoM was written and tested with **Python>=3.6**
 - The results in the paper are based on averages across multiple simulation runs. To reproduce those results, we suggest running the simulations in parallel, for example on a cluster, since they will need a lot of memory and CPU time.

@@ -25,8 +25,6 @@ def write_json_compressed(fpath: str, data: dict) -> object:
         print("Failed to write json compressed", e)
         return e
 
-
-### HELPERS FOR EXP CONFIG
 def read_json_compressed(fpath: str) -> object:
     data = None
     try:

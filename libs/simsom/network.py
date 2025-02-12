@@ -375,6 +375,7 @@ class HumanBotNetwork(Network):
     def __repr__(self):
         return f"HumanBotNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.beta}, {self.gamma}, {self.targeting_criterion})"
 
+
     def __str__(self):
         return f"HumanBotNetwork \n{self.net.summary()}"
 
@@ -508,6 +509,7 @@ class IllegalActivityNetwork(Network):
     def __repr__(self):
         return f"IllegalActivityNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
 
+
     def __str__(self):
         return f"IllegalActivityNetwork \n{self.net.summary()}"
 
@@ -566,6 +568,7 @@ class HarmfulActivityNetwork(Network):
 
     def __repr__(self):
         return f"HarmfulActivityNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
+
 
     def __str__(self):
         return f"HarmfulActivityNetwork \n{self.net.summary()}"
