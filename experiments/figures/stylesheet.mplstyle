@@ -1,0 +1,9 @@
+figure.titlesize : large  
+axes.titlesize : 22
+axes.labelsize : 15
+lines.linewidth : 3
+lines.markersize : 6
+scatter.marker : o
+xtick.labelsize : 13
+ytick.labelsize : 13
+figure.autolayout: False  # When True, automatically adjust subplot parameters to make the plot fit the figure with `tight_layout`
