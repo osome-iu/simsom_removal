@@ -3,15 +3,12 @@
 .ipynb_checkpoints/
 __pycache__/
 .vs_code/
-simsom.egg-info/
+simsommod.egg-info/
 example/results/
-data/
+*/*.egg-info
 
 .snakemake/
 
 logs/
-tests/
-
-report_figures_new/
-workflow/rules_new/
-report_figures/
+archive/
+experiments/config/
