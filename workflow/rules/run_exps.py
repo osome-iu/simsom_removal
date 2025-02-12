@@ -1,3 +1,11 @@
+"""
+Script to run experiments based on a set of configurations
+
+Date: Feb 10, 2025
+Author: Bao Truong
+
+"""
+
 import os
 import json
 import subprocess

@@ -1,6 +1,11 @@
-""" Create the empirical follower network as input to simulations.
+""" 
+Create the empirical follower network as input to simulations.
     1. Reconstruct the follower network for the data files provided in doi.org/10.7910/DVN/6CZHH5
     2. Further filter to make the network more manageable: k-core decomposition and edge filtering
+
+Date: Jun 10, 2024
+Author: Bao Truong
+
 """
 
 import networkx as nx

@@ -1,10 +1,14 @@
 """ 
-    Make exp config 
-    - Main result: effects of varying take down delays (moderation_half_life)
-    - Robustness check:
-        - Effects of group size (s_L, s_H) 
-        - Effects of illegal content prevalence (illegal_content_probability) 
-        - Effects of network type (network_type)
+Make exp config 
+- Main result: effects of varying take down delays (moderation_half_life)
+- Robustness check:
+    - Effects of group size (s_L, s_H) 
+    - Effects of illegal content prevalence (illegal_content_probability) 
+    - Effects of network type (network_type)
+
+Date: Feb 10, 2025
+Author: Bao Truong
+
 """
 
 import simsom.utils as utils
@@ -47,8 +51,11 @@ def make_exps(saving_dir, default_config, network_dir):
 
         # with moderation
         cf = {
-            "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
+            "infosys_gml_fpath": os.path.join(
+                network_dir, EXP_TYPE, f"{network_name}.gml"
+            ),
             "quality_settings": default_config["quality_settings"],
+            "illegal_probability": illegal_frac,
             "moderation_half_life": moderation_scale,
             "moderate": True,
         }
@@ -78,8 +85,11 @@ def make_exps(saving_dir, default_config, network_dir):
             network_name = f"groupsize_{str(highrisk_frac)}"
             # with moderation
             cf = {
-                "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
+                "infosys_gml_fpath": os.path.join(
+                    network_dir, EXP_TYPE, f"{network_name}.gml"
+                ),
                 "quality_settings": network_config,
+                "illegal_probability": illegal_frac,
                 "moderation_half_life": moderation_scale,
                 "moderate": True,
             }
@@ -111,7 +121,9 @@ def make_exps(saving_dir, default_config, network_dir):
             )
             # with moderation
             cf = {
-                "infosys_gml_fpath": os.path.join(network_dir, EXP_TYPE, network_name),
+                "infosys_gml_fpath": os.path.join(
+                    network_dir, EXP_TYPE, f"{network_name}.gml"
+                ),
                 "quality_settings": network_config,
                 "moderation_half_life": moderation_scale,
                 "moderate": True,
@@ -141,7 +153,7 @@ def make_exps(saving_dir, default_config, network_dir):
             # with moderation
             cf = {
                 "infosys_gml_fpath": os.path.join(
-                    network_dir, EXP_TYPE, f"{net_name}_{illegal_frac}"
+                    network_dir, EXP_TYPE, f"{net_name}_{illegal_frac}.gml"
                 ),
                 "moderation_half_life": moderation_scale,
                 "moderate": True,

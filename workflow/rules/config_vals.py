@@ -1,5 +1,8 @@
 """
 Default values and range of parameter swipe
+
+Date: Feb 10, 2025
+Author: Bao Truong
 """
 
 import numpy as np

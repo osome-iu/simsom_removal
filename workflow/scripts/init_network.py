@@ -1,4 +1,10 @@
-""" Script to initialize Information network based on a .json configuration file """
+"""
+Script to initialize Information network based on a .json configuration file 
+
+Date: Feb 10, 2025
+Author: Bao Truong
+
+"""
 
 import simsom.graphutils as graphutils
 import simsom.utils as utils
