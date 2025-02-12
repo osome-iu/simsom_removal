@@ -9,7 +9,7 @@ The model is an extension of [SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cia
 2. `example`: contains a minimal example to start using the SimSoM model
 3. `libs`: contains the extended SimSoM model package that can be imported into scripts
 4. `experiments`: experiment configurations, results, supplementary data and .ipynb noteboooks to produce figures reported in the paper
-5. `workflow`: scripts to run simulation and Snakemake rules to run sets of experiments
+5. `workflow`: scripts to run experiments
 
 ## 1. Install SimSoM
 
