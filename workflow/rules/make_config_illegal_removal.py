@@ -66,12 +66,12 @@ def make_exps(saving_dir, default_config, network_dir):
         all_exps[EXP_TYPE][config_name] = config
         save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
-        # baseline without moderation:
-        config["moderate"] = False
-        config["moderation_scale"] = None
-        config_name = f"baseline"
-        all_exps[EXP_TYPE][config_name] = config
-        save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
+    # baseline without moderation:
+    config["moderate"] = False
+    config["moderation_scale"] = None
+    config_name = f"baseline"
+    all_exps[EXP_TYPE][config_name] = config
+    save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
     ##### ROBUSTNESS - VARY GROUP SIZE #####
 
@@ -79,8 +79,8 @@ def make_exps(saving_dir, default_config, network_dir):
     TAUS = [2, 8]
     all_exps[EXP_TYPE] = {}
 
-    for moderation_scale in TAUS:
-        for network_config in configs.GROUP_SIZE_VALS:
+    for network_config in configs.GROUP_SIZE_VALS:
+        for moderation_scale in TAUS:
             highrisk_frac = network_config["sizes"][0]
             network_name = f"groupsize_{str(highrisk_frac)}"
             # with moderation
@@ -100,12 +100,12 @@ def make_exps(saving_dir, default_config, network_dir):
             all_exps[EXP_TYPE][config_name] = config
             save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
-            # baseline without moderation:
-            config["moderate"] = False
-            config["moderation_scale"] = None
-            config_name = f"baseline__{highrisk_frac}"
-            all_exps[EXP_TYPE][config_name] = config
-            save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
+        # baseline without moderation:
+        config["moderate"] = False
+        config["moderation_half_life"] = -1
+        config_name = f"baseline__{highrisk_frac}"
+        all_exps[EXP_TYPE][config_name] = config
+        save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
     ##### ROBUSTNESS - VARY ILLEGAL CONTENT PROBABILITY #####
 
@@ -113,8 +113,8 @@ def make_exps(saving_dir, default_config, network_dir):
     TAUS = [2, 8]
     all_exps[EXP_TYPE] = {}
 
-    for moderation_scale in TAUS:
-        for network_config in configs.ILLEGAL_PROBABILITY_VALS:
+    for network_config in configs.ILLEGAL_PROBABILITY_VALS:
+        for moderation_scale in TAUS:
             illegal_frac = network_config["total_illegal_frac"]
             network_name = (
                 f"empirical_{str(illegal_frac)}"  # TODO: change empirical -> big net?
@@ -135,20 +135,20 @@ def make_exps(saving_dir, default_config, network_dir):
             all_exps[EXP_TYPE][config_name] = config
             save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
-            # baseline without moderation:
-            config["moderate"] = False
-            config["moderation_scale"] = None
-            config_name = f"baseline__{illegal_frac}"
-            all_exps[EXP_TYPE][config_name] = config
-            save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
+        # baseline without moderation:
+        config["moderate"] = False
+        config["moderation_half_life"] = -1
+        config_name = f"baseline__{illegal_frac}"
+        all_exps[EXP_TYPE][config_name] = config
+        save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
     ##### ROBUSTNESS - VARY NETWORK TYPE #####
     EXP_TYPE = "vary_network_type"
     TAUS = [2, 8]
     all_exps[EXP_TYPE] = {}
 
-    for moderation_scale in TAUS:
-        for net_name, net_config in configs.NETWORK_VALS.items():
+    for net_name, net_config in configs.NETWORK_VALS.items():
+        for moderation_scale in TAUS:
             illegal_frac = net_config["quality_settings"]["total_illegal_frac"]
             # with moderation
             cf = {
@@ -167,12 +167,12 @@ def make_exps(saving_dir, default_config, network_dir):
             all_exps[EXP_TYPE][config_name] = config
             save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
-            # baseline without moderation:
-            config["moderate"] = False
-            config["moderation_scale"] = None
-            config_name = f"baseline__{net_name}"
-            all_exps[EXP_TYPE][config_name] = config
-            save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
+        # baseline without moderation:
+        config["moderate"] = False
+        config["moderation_half_life"] = -1
+        config_name = f"baseline__{net_name}"
+        all_exps[EXP_TYPE][config_name] = config
+        save_config_to_subdir(config, config_name, saving_dir, EXP_TYPE)
 
     fp = os.path.join(saving_dir, "all_configs.json")
     json.dump(all_exps, open(fp, "w"))

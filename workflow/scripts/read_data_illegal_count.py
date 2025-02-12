@@ -1,10 +1,22 @@
-""" Read experiment results from folders matching a pattern `{result_path}*/results_verbose/*0.01*.json.gz`
+"""
+Purpose: read the results of the simulation and extract the engagement data
     Save results from each folder into a single parquet file (to avoid memory issues)
-     - Get no. steps to convergence of each exp
-     - Read all subfolders in the  folder of an experiment (instead of specifying folder names)
+    Output: a dataframe of engagement data for a simulation. 
+    Each row represents stats for all the messages in the simulation that belong to a particular type (illegal or legal)
+    The columns are: illegal_frac, unique_illegal_frac, illegal_count, unique_illegal_count, fpath, moderation_half_life, quality, no_steps, base_name, illegal_prob
+    - illegal_frac (float): the fraction of illegal content over all content
+    - unique_illegal_frac (float): the fraction of unique illegal content over all unique content
+    - illegal_count (int): the number of illegal content
+    - unique_illegal_count (int): the number of unique illegal content
+    - moderation_half_life (float): illegal content half-life
+    - quality (float): the quality of the system
+    - no_steps (int): the number of steps to convergence
+    - fpath (str): the path to the file that contains the data    
+    - s_H (float): relative size of high-risk group
+    - illegal_prob (float): the illegal content probability of the system
 
     Usage:
-    python read_data_illegal_count.py --result_path /N/project/simsom/carisma/04302024_illegal_removal --out_path /N/u/baotruon/BigRed200/carisma/experiments/20241126_main_results
+    python read_data_illegal_count.py --result_path experiments/<experiment_name> --out_path data/<experiment_name>
     Log files are saved in the '{out_path}/log' folder
 """
 
@@ -14,11 +26,11 @@ import pandas as pd
 import os
 import glob
 import argparse
+import tqdm
 
 PARAMS = [
     "moderation_half_life",
     "quality",
-    "graph_gml",  # to get illegal_content_probability
     "no_steps",
 ]
 
@@ -75,26 +87,6 @@ def get_illegal_prevalence(data):
     return result
 
 
-## Transform file names to match mod=True vs mod=False
-def transform_file_name(string):
-    import re
-
-    # Regular expression to match the desired prefix and remove unwanted trailing patterns including ".json.gz"
-    # This pattern captures the initial part of the filename up to "__diff_true"
-    # and ignores optional trailing patterns like "_1", "--EXTRA", "--1" (where "--EXTRA" and "--1" can repeat)
-    # and the file extension ".json.gz". It also correctly handles filenames without trailing patterns.
-    pattern = r"^(.*?__diff_true)(?:_[0-9]|(--EXTRA)|(--1))*\.json\.gz$"
-
-    # Perform the regex search and substitution
-    match = re.match(pattern, string)
-    if match:
-        # Return the base prefix part of the match
-        return match.group(1)
-    else:
-        # If no match, return the original string without modifications
-        return string
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process experiment results paths.")
     parser.add_argument(
@@ -114,8 +106,6 @@ if __name__ == "__main__":
     RES_DIR = args.result_path
 
     OUT_DIR = args.out_path
-    # if os.path.exists(OUT_DIR):
-    #     raise ValueError("Output directory already exists. Please remove it first.")
     if not os.path.exists(OUT_DIR):
         os.makedirs(OUT_DIR)
 
@@ -131,44 +121,37 @@ if __name__ == "__main__":
 
     ## GET ILLEGAL CONTENT FRACTION
     ## READING ALL SUBFOLDERS
-    folders = glob.glob(f"{RES_DIR}*/results_verbose/*")
-    logger.info(f"** Reading from {len(folders)} folders ... ** ")
+    all_fpaths = glob.glob(f"{RES_DIR}/results_verbose/*.json.gz")
 
-    for jdx, folder in enumerate(folders):
-        logger.info(f"  Reading from {folder}...")
-        if os.path.exists(f"{OUT_DIR}/{os.path.basename(folder)}"):
-            logger.info(f"\t{os.path.basename(folder)} already processed. Skipping...")
+    dfs = []
+    for fpath in tqdm.tqdm(
+        all_fpaths, desc=f"Processing {len(all_fpaths)} files from {RES_DIR}"
+    ):
+        try:
+            verbose = utils.read_json_compressed(fpath)
+            # calculate prevalence
+            res = get_illegal_prevalence(verbose)
+
+            # Save relevant experiment settings
+            for param in PARAMS:
+                if param == "no_steps":
+                    res["no_steps"] = len(verbose["quality_timestep"]) * len(res)
+                else:
+                    res[param] = verbose[param] * len(res)
+            res["fpath"] = fpath * len(res)
+            res["s_H"] = verbose["quality_settings"]["sizes"][0] * len(res)
+            res["illegal_prob"] = verbose["quality_settings"][
+                '"total_illegal_frac"'
+            ] * len(res)
+            dfs.append(res)
+        except Exception as e:
+            logger.info(f"\tError reading results from file {os.path.basename(fpath)}")
+            logger.info(e)
             continue
-        dfs = []
-        all_fpaths = glob.glob(f"{folder}/*.json.gz")
-        for fpath in all_fpaths:
-            if jdx % 10 == 0:
-                logger.info(f"\tProcessed {jdx}/{len(all_fpaths)} files")
-            try:
-                verbose = utils.read_json_compressed(fpath)
-                # calculate prevalence
-                res = get_illegal_prevalence(verbose)
-                res["fpath"] = fpath * len(res)
-                # get other info
-                for param in PARAMS:
-                    if param == "no_steps":
-                        res["no_steps"] = len(verbose["quality_timestep"]) * len(res)
-                    else:
-                        res[param] = verbose[param] * len(res)
-                dfs.append(res)
-            except Exception as e:
-                logger.info(
-                    f"\tError reading results from file {os.path.basename(fpath)}"
-                )
-                logger.info(e)
-                continue
-        if len(dfs) == 0:
-            logger.info(f"\tNo data for {os.path.basename(folder)}")
-            continue
-        df = pd.concat(dfs).reset_index(drop=True)
+    df = pd.concat(dfs).reset_index(drop=True)
 
-        out_fpath = f"{OUT_DIR}/{os.path.basename(folder)}__prevalence.parquet"
-        df.to_parquet(out_fpath)
+    out_fpath = f"{OUT_DIR}/{os.path.basename(RES_DIR)}__prevalence.parquet"
+    df.to_parquet(out_fpath)
 
-        logger.info(f"Finish saving to {out_fpath} (len: {len(df)})!")
+    logger.info(f"Finish saving to {out_fpath} (len: {len(df)})!")
     logger.info("All done!")
