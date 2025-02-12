@@ -189,7 +189,7 @@ def create_human_bot_network(
 def init_net(
     targeting_criterion=None,
     verbose=False,
-    igraph_fpath=None,
+    follower_network_fpath=None,
     n_humans=1000,
     beta=0.05,
     gamma=0.05,
@@ -203,7 +203,7 @@ def init_net(
     Parameters:
         - targeting_criterion (str): bot targeting strategies; if None, random targeting
         - verbose (bool): if True, print different steps of network creation
-        - igraph_fpath (str): file path of the empirical follower network. If None, create a synthetic human subnetwork
+        - follower_network_fpath (str): file path of the empirical follower network. If None, create a synthetic human subnetwork
             nodes in human_network must have attribute "label", indicating account id on the platform, e.g., user_id for Twitter
         - n_humans (int): size of human subnetwork
         - beta (float): bots/humans ratio (specifies size of bot subnetwork). If 0, create a human-only network
@@ -221,14 +221,14 @@ def init_net(
     # TODO: add another synthetic model (scale-free)
 
     # Create authentic agent subnetwork
-    if igraph_fpath is None:
+    if follower_network_fpath is None:
         if verbose:
             print("Generating human network...")
         H = random_walk_network(n_humans)
     else:
         if verbose:
             print("Reading human network...")
-        H = read_empirical_network(igraph_fpath)
+        H = read_empirical_network(follower_network_fpath)
 
     # Add attributes
     H.vs["bot"] = [0 for _ in range(H.vcount())]

@@ -1,4 +1,10 @@
-""" Script to initialize Information network based on a .json configuration file """
+"""
+Script to initialize Information network based on a .json configuration file 
+
+Date: Feb 10, 2025
+Author: Bao Truong
+
+"""
 
 import simsom.graphutils as graphutils
 import simsom.utils as utils
@@ -6,6 +12,7 @@ import sys
 import argparse
 import json
 import igraph
+import os
 from simsom.network import (
     HumanBotNetwork,
     IllegalActivityNetwork,
@@ -66,19 +73,22 @@ def main(args):
         args.infile
     )  # infile is a json containing list of {"beta": 0.0, "gamma": 0.0}
     outfile = args.outfile
+    # make sure directory exists to save file
+    if not os.path.exists(os.path.dirname(outfile)):
+        os.makedirs(os.path.dirname(outfile))
     configfile = args.config
     mode = args.mode
 
     net_spec = json.load(open(configfile, "r"))
-    if net_spec["igraph_fpath"] is not None:
+    if net_spec["follower_network_fpath"] is not None:
         if infile is not None:
             print(
                 f"! Infile specified in config file. Overwriting with infile argument:{infile}"
             )
-            net_spec.update({"igraph_fpath": infile})
+            net_spec.update({"follower_network_fpath": infile})
         else:
             print(
-                f"! Infile not specified. Using infile from config file: {net_spec['igraph_fpath']}"
+                f"! Infile not specified. Using infile from config file: {net_spec['follower_network_fpath']}"
             )
 
     # print(net_spec)

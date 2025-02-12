@@ -114,7 +114,7 @@ class Network:
 
     def __init__(
         self,
-        igraph_fpath,
+        follower_network_fpath,
         activity_differential=False,
         alpha=None,
         xmin=None,
@@ -126,7 +126,7 @@ class Network:
         Read empirical network from file path or create a synthetic network using random-walk growth model
 
         Args:
-            igraph_fpath (str): The file path to the igraph.
+            follower_network_fpath (str): The file path to the igraph.
             activity_differential (bool): Flag to enable activity differential.
             alpha (float): The alpha value.
             xmin (float): The xmin value.
@@ -137,13 +137,13 @@ class Network:
             None
         """
 
-        self.igraph_fpath = igraph_fpath
+        self.follower_network_fpath = follower_network_fpath
         self.activity_differential = activity_differential
         self.alpha = alpha
         self.xmin = xmin
         self.net_size = net_size
-        if self.igraph_fpath is not None:
-            self.net = read_empirical_network(igraph_fpath)
+        if self.follower_network_fpath is not None:
+            self.net = read_empirical_network(follower_network_fpath)
         else:
             self.net = random_walk_network(net_size, p=p, k_out=k_out)
 
@@ -156,7 +156,7 @@ class Network:
         self.add_user_activity_attribute(activity_differential, alpha, xmin)
 
     def __repr__(self):
-        return f"Network({self.igraph_fpath},{self.activity_differential},{self.alpha},{self.xmin},{self.net_size})"
+        return f"Network({self.follower_network_fpath},{self.activity_differential},{self.alpha},{self.xmin},{self.net_size})"
 
     def __str__(self):
         return f"Base Network \n{self.net.summary()}"
@@ -293,7 +293,7 @@ class NetworkFromIgraphObject(Network):
 class HumanBotNetwork(Network):
     def __init__(
         self,
-        igraph_fpath,
+        follower_network_fpath,
         activity_differential=False,
         alpha=None,
         xmin=None,
@@ -312,7 +312,7 @@ class HumanBotNetwork(Network):
         See paper: https://arxiv.org/pdf/1907.06130.pdf for details.
 
         Args:
-            igraph_fpath (str): file path to the igraph file of the empirical human network.
+            follower_network_fpath (str): file path to the igraph file of the empirical human network.
             activity_differential (bool): whether users have different levels of activity.
             alpha (float): alpha value for activity differential.
             xmin (float): xmin value for activity differential.
@@ -325,9 +325,11 @@ class HumanBotNetwork(Network):
             None
         """
         print("Generating human subnetwork...")
-        super().__init__(igraph_fpath, activity_differential, alpha, xmin, net_size)
+        super().__init__(
+            follower_network_fpath, activity_differential, alpha, xmin, net_size
+        )
         self.human_subnetwork = Network(
-            igraph_fpath, activity_differential, alpha, xmin, net_size
+            follower_network_fpath, activity_differential, alpha, xmin, net_size
         )
         self.human_subnetwork.add_node_attributes(
             ["bot"], [[0] * self.human_subnetwork.net.vcount()]
@@ -371,7 +373,8 @@ class HumanBotNetwork(Network):
         assert all(i in self.net.vs.attributes() for i in REQUIRED_ATTRIBS_HUMANBOT_NET)
 
     def __repr__(self):
-        return f"HumanBotNetwork({self.igraph_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.beta}, {self.gamma}, {self.targeting_criterion})"
+        return f"HumanBotNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.beta}, {self.gamma}, {self.targeting_criterion})"
+
 
     def __str__(self):
         return f"HumanBotNetwork \n{self.net.summary()}"
@@ -462,7 +465,7 @@ class IllegalActivityNetwork(Network):
 
     def __init__(
         self,
-        igraph_fpath,
+        follower_network_fpath,
         activity_differential=False,
         alpha=None,
         xmin=None,
@@ -478,7 +481,7 @@ class IllegalActivityNetwork(Network):
     ):
         """
         Args:
-            igraph_fpath (str): file path to the igraph file of the empirical human network.
+            follower_network_fpath (str): file path to the igraph file of the empirical human network.
             activity_differential (bool): whether users have different levels of activity.
             alpha (float): alpha value for activity differential.
             xmin (float): xmin value for activity differential.
@@ -488,7 +491,13 @@ class IllegalActivityNetwork(Network):
         Returns: None
         """
         super().__init__(
-            igraph_fpath, activity_differential, alpha, xmin, net_size, p, k_out
+            follower_network_fpath,
+            activity_differential,
+            alpha,
+            xmin,
+            net_size,
+            p,
+            k_out,
         )
         self.quality_settings = quality_settings
         self.add_user_quality_attribute(self.quality_settings)
@@ -498,7 +507,8 @@ class IllegalActivityNetwork(Network):
         assert all(i in self.net.vs.attributes() for i in REQUIRED_ATTRIBS_HUMAN_NET)
 
     def __repr__(self):
-        return f"IllegalActivityNetwork({self.igraph_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
+        return f"IllegalActivityNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
+
 
     def __str__(self):
         return f"IllegalActivityNetwork \n{self.net.summary()}"
@@ -516,7 +526,7 @@ class HarmfulActivityNetwork(Network):
 
     def __init__(
         self,
-        igraph_fpath,
+        follower_network_fpath,
         activity_differential=False,
         alpha=None,
         xmin=None,
@@ -531,7 +541,7 @@ class HarmfulActivityNetwork(Network):
     ):
         """
         Args:
-            igraph_fpath (str): file path to the igraph file of the empirical human network.
+            follower_network_fpath (str): file path to the igraph file of the empirical human network.
             activity_differential (bool): whether users have different levels of activity.
             alpha (float): alpha value for activity differential.
             xmin (float): xmin value for activity differential.
@@ -541,7 +551,13 @@ class HarmfulActivityNetwork(Network):
         Returns: None
         """
         super().__init__(
-            igraph_fpath, activity_differential, alpha, xmin, net_size, p, k_out
+            follower_network_fpath,
+            activity_differential,
+            alpha,
+            xmin,
+            net_size,
+            p,
+            k_out,
         )
         self.quality_settings = quality_settings
         self.add_user_quality_attribute(self.quality_settings)
@@ -551,7 +567,8 @@ class HarmfulActivityNetwork(Network):
         assert all(i in self.net.vs.attributes() for i in REQUIRED_ATTRIBS_HUMAN_NET)
 
     def __repr__(self):
-        return f"HarmfulActivityNetwork({self.igraph_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
+        return f"HarmfulActivityNetwork({self.follower_network_fpath}, {self.activity_differential}, {self.alpha}, {self.xmin}, {self.net_size}, {self.quality_settings})"
+
 
     def __str__(self):
         return f"HarmfulActivityNetwork \n{self.net.summary()}"

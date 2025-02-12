@@ -111,7 +111,10 @@ class SimSomMod:
         # moderation
         self.moderate = moderate
         self.moderation_half_life = moderation_half_life
-        self.survival_prob = self._halflife_to_survivalprob(self.moderation_half_life)
+        if self.moderate:
+            self.survival_prob = self._halflife_to_survivalprob(
+                self.moderation_half_life
+            )
 
         # simulation options
         self.n_threads = n_threads

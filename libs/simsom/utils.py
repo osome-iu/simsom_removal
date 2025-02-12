@@ -10,7 +10,6 @@ import json
 import gzip
 import datetime
 import inspect
-import simsom.config_vals as configs
 from typing import Tuple, List
 
 
@@ -26,7 +25,6 @@ def write_json_compressed(fpath: str, data: dict) -> object:
         print("Failed to write json compressed", e)
         return e
 
-
 def read_json_compressed(fpath: str) -> object:
     data = None
     try:
@@ -40,7 +38,6 @@ def read_json_compressed(fpath: str) -> object:
         return e
 
 
-### EXP CONFIGS
 def update_dict(adict, default_dict, fill_na=True):
     # only update the dictionary if key doesn't exist
     # use to fill out the rest of the params we're not interested in
@@ -52,30 +49,6 @@ def update_dict(adict, default_dict, fill_na=True):
         if fill_na is True and adict[k] is None:
             adict.update({k: v})
     return adict
-
-
-def netconfig2netname(config_fname, network_config):
-    # Map specific args to pre-constructed network name
-    # network_config is a dict of at least 3 keys: {'gamma', 'strategy', 'activity_differential'}
-    # structure: network_config = {'gamma':0.005, 'targeting_criterion': 'partisanship', 'activity_differential': False}
-
-    exp_configs = json.load(open(config_fname, "r"))
-    EXPS = exp_configs[
-        "vary_network"
-    ]  # keys are name of network, format: '{betaidx}{gammaidx}{targetingidx}'
-
-    legal_vals = ["gamma", "targeting_criterion", "activity_differential"]
-    network_config = {k: val for k, val in network_config.items() if k in legal_vals}
-
-    GAMMA = configs.GAMMA
-    TARGETING = configs.TARGETING
-
-    network_fname = f"{GAMMA.index(network_config['gamma'])}{TARGETING.index(network_config['targeting_criterion'])}_activity_diff_{str(network_config['activity_differential']).lower()}"
-
-    for arg_name in network_config.keys():
-        assert EXPS[network_fname][arg_name] == network_config[arg_name]
-
-    return network_fname
 
 
 def remove_illegal_kwargs(adict, amethod):

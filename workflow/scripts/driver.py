@@ -5,7 +5,9 @@ Run simulation(s)
 
 Reshare output file (.csv) and verbose tracking file (.json.gz) names are always suffixed by number of runs 
 e.g: if no_run=1, reshare_fpath="reshares_0.csv" and verboseout="verboseout_0.json.gz"
-"""
+
+Date: Feb 10, 2025
+Author: Bao Truong
 
 from simsom import SimSomMod
 import simsom.utils as utils
@@ -17,10 +19,11 @@ import copy
 from collections import defaultdict
 import os
 from datetime import datetime
+import subprocess
 
 
 def multiple_simulations(
-    infosys_specs,
+    exp_specs,
     logger,
     times=1,
     reshare_fpath="reshares.csv",
@@ -31,6 +34,8 @@ def multiple_simulations(
     metrics = ["quality", "diversity", "discriminative_pow"]
     n_measures = defaultdict(lambda: [])
 
+    # avoid passing undefined keyword to InfoSys
+    infosys_specs = utils.remove_illegal_kwargs(exp_specs, SimSomMod.__init__)
     logger.info(f"Run simulation {times} times..")
     for time in range(times):
         logger.info(f"**{time+1}/{times}**")
@@ -62,7 +67,7 @@ def multiple_simulations(
                     if time > 0
                     else verboseout
                 )
-                specs = copy.deepcopy(infosys_specs)
+                specs = copy.deepcopy(exp_specs)
                 specs.update(measurements)
                 utils.write_json_compressed(n_verboseout, specs)
 
@@ -74,38 +79,33 @@ def multiple_simulations(
             n_measures[metric] += [measurements[metric]]
 
     logger.info(
-        f"average quality for follower network: %s pm %s",
-        np.mean(np.array(n_measures["quality"])),
-        np.std(np.array(n_measures["quality"])),
-    )
+        f'average quality for follower network: {np.mean(np.array(n_measures["quality"]))} pm {np.std(np.array(n_measures["quality"]))}')
 
     # return a short version of measurements
     return dict(n_measures)
 
-
-def run_simulation(infosys_specs, logger, reshare_fpath="reshares.csv"):
+def run_simulation(exp_specs, logger, reshare_fpath="reshares.csv"):
     # baseline:  mu=0.5, sigma=15, beta=0.01, gamma=0.001, phi=1, theta=1
     logger.info("Create SimSomMod instance..")
+    # avoid passing undefined keyword to InfoSys
+    infosys_specs = utils.remove_illegal_kwargs(exp_specs, SimSomMod.__init__)
     follower_sys = SimSomMod(**infosys_specs)
     logger.info(f"Start simulation..")
     measurements = follower_sys.simulation(reshare_fpath=reshare_fpath)
     logger.info("average quality for follower network:", measurements["quality"])
     return measurements
+  
+def create_network_file(config_fpath, in_fpath, out_fpath):
+    # Create infosys network file from follower network file
+    cmd = f"python3 -m workflow.scripts.init_network -i {in_fpath} -o {out_fpath} --config {config_fpath} --mode illegal"
+    subprocess.run(cmd, shell=True, check=True)
+    print(
+        f"Infosys network created with infile {in_fpath} and {config_fpath} at {out_fpath}."
 
 
 def main(args):
     parser = argparse.ArgumentParser(
         description="run simulation on an igraph instance of SimSomMod",
-    )
-
-    parser.add_argument(
-        "-i",
-        "--infile",
-        action="store",
-        dest="infile",
-        type=str,
-        required=True,
-        help="path to input gml file of network",
     )
     parser.add_argument(
         "-o",
@@ -160,7 +160,6 @@ def main(args):
     )
 
     args = parser.parse_args(args)
-    infile = args.infile
     outfile = args.outfile
     verboseout = args.verboseoutfile
     reshare_default_path = f"{os.path.dirname(verboseout)}/cascades"
@@ -171,11 +170,6 @@ def main(args):
     )
     configfile = args.config
     n_simulations = args.times
-
-    infosys_spec = json.load(open(configfile, "r"))
-    infosys_spec["graph_gml"] = infile
-    if args.nthreads is not None:
-        infosys_spec["n_threads"] = int(args.nthreads)
 
     ## LOGGING
     log_dir = f"{os.path.dirname(outfile)}/logs"
@@ -191,25 +185,41 @@ def main(args):
         ),
         also_print=True,
     )
-    # avoid passing undefined keyword to InfoSys
-    legal_specs = utils.remove_illegal_kwargs(infosys_spec, SimSomMod.__init__)
+
+    exp_specs = json.load(open(configfile, "r"))
+    # Check if infosys_graph exists, if not create it
+    infosys_gml_fpath = exp_specs["infosys_gml_fpath"]
+
+    if not os.path.exists(infosys_gml_fpath):
+        logger.info(
+            f"Infosys .gml file {infosys_gml_fpath} does not exist. Creating..."
+        )
+        try:
+            follower_network_fpath = exp_specs["follower_network_fpath"]
+            create_network_file(configfile, follower_network_fpath, infosys_gml_fpath)
+        except Exception as e:
+            raise Exception("Failed to create infosys .gml file", e)
+
+    exp_specs["graph_gml"] = infosys_gml_fpath
+    if args.nthreads is not None:
+        exp_specs["n_threads"] = int(args.nthreads)
 
     logger.info("Finished parsing arguments. Running simulation.. ")
 
     nruns_measurements = multiple_simulations(
-        legal_specs,
+        exp_specs,
         logger=logger,
         times=int(n_simulations),
         reshare_fpath=reshare_fpath,
         verboseout=verboseout,
     )
     # add infosys configuration
-    infosys_spec.update(nruns_measurements)
+    exp_specs.update(nruns_measurements)
 
     logger.info("Saving short results.. ")
     # save even empty results so smk don't complain
     fout = open(outfile, "w")
-    json.dump(infosys_spec, fout)
+    json.dump(exp_specs, fout)
     fout.flush()
     fout.close()
 
