@@ -11,4 +11,4 @@ create_conda_env:
 	echo "Creating conda environent at ${ENV_PATH}/envs/${PROJ_NAME} (Delete any existing conda env with the same name).."
 	rm -rf "${ENV_PATH}/envs/${PROJ_NAME}"
 	conda create --force -y -n $(PROJ_NAME) python=3.8  
-	$(CONDA_ACTIVATE); pip install -e ./libs/; pip install networkx igraph pyarrow igraph; $(DEPENDENCIES)
+	$(CONDA_ACTIVATE); pip install -e ./libs/; pip install networkx igraph pyarrow igraph tqdm; $(DEPENDENCIES)
