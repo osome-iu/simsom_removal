@@ -7,10 +7,9 @@
 #     - vary_group_size
 #     - vary_illegal_probability
 #     - vary_network_type 
+# Results of the experiment sets are saved in a folder with a corresponding name in the `experiments/results` folder.
 
-# NOTE: Must be run from the project root.
-
-# Usage: 
+# Usage: From the project root, run the following command:
 #     - make file executable: chmod +x run_experiment.sh 
 #     - call file: workflow/rules/run_experiments.sh
 
@@ -22,6 +21,7 @@
 ABS_PATH=$"experiments"
 CONFIG_DIR=$"${ABS_PATH}/config"
 DATA_DIR=$"data"
+NO_RUNS=$"1"
 
 # Generate configurations
 python3 workflow/rules/make_config_illegal_removal.py $CONFIG_DIR $DATA_DIR
@@ -32,5 +32,5 @@ EXPS=("vary_tau" "vary_group_size" "vary_illegal_probability" "vary_network_type
 # Loop through each experiment type and call the Python script
 for exp in "${EXPS[@]}"; do
   echo "** Run exp $exp **"
-  python3 workflow/rules/run_exps.py "$exp" "$CONFIG_DIR"
+  python3 workflow/rules/run_exps.py "$exp" "$CONFIG_DIR" "$NO_RUNS" 
 done
