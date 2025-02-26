@@ -6,10 +6,12 @@ The model is an extension of [SimSoM: A <ins>Sim</ins>ulator of <ins>So</ins>cia
 
 ## Overview of the repo
 1. `data`: contains raw & derived datasets
-2. `example`: contains a minimal example to start using the SimSoM model
+2. `example`: contains a minimal example to start using the SimSoM model. This model was written and tested with **Python>=3.6**
 3. `experiments`: experiment configurations, results, supplementary data and .ipynb noteboooks to produce figures reported in the paper
 4. `libs`: contains the extended SimSoM model package that can be imported into scripts
-5. `workflow`: scripts to run experiments
+5. `workflow`:
+    - `rules` contains scripts to run the experiments
+    - `scripts` contains helper scripts used by `rules` scripts. These include functions such as network initialization, data parsing, etc.
 
 ## 1. Install SimSoM
 
@@ -31,6 +33,11 @@ We use `conda`, a package manager to manage the development environment. Please 
 
 ## 2. Plot results from the paper
 Run the notebooks in `experiments/figures` to visualize the experiment results in the paper 
+
+The results in the paper are based on averages across 10+ simulation runs. For step 3 below, the shell script is configured so that it runs one simulation for each set of experiment. 
+
+To run many simulations, change the `NO_RUNS` variable in the `workflow/rules/run_experiment.sh`.
+However, since running multiple simulations takes a lot of time, we suggest running many of them at once. See this [workflow/rules/run_exps.smk](https://github.com/osome-iu/simsom_removal/blob/main/workflow/rules/run_exps.smk) for an inspiration on how to do this using a workflow manager, [Snakemake](https://snakemake.readthedocs.io/en/stable/). Also note that saving all message information as a gzip compressed file takes about 20-500 megabytes per run. 
 
 ## 3. Reproduce results from scratch
 
@@ -77,9 +84,3 @@ We reconstruct the empirical network from the above 2 files, resulting in `data/
 
 Check out `example` to get started. 
 - Example of the simulation and results: `example/run_simulation.ipynb`
-
-### Troubleshooting
-
-
-- SimSoM was written and tested with **Python>=3.6**
-- The results in the paper are based on averages across multiple simulation runs. To reproduce those results, we suggest running the simulations in parallel, for example on a cluster, since they will need a lot of memory and CPU time.
