@@ -96,6 +96,10 @@ class SimSomMod:
         moderation_half_life=1,
         converge_by="quality",  # ['steps', 'quality', 'illegal_frac']
         max_steps=100,
+        # Deranking parameters
+        deranking_severity=1.0,  # c parameter: 1.0 = no deranking, <1.0 = deranking
+        r_half=10,  # rank where p(seen) = 0.5
+        temp=2,  # temperature parameter for sigmoid steepness
     ):
         # graph object
         self.graph_gml = graph_gml
@@ -107,6 +111,11 @@ class SimSomMod:
         self.mu = mu
         self.phi = phi
         self.theta = theta
+        
+        # deranking params
+        self.deranking_severity = deranking_severity
+        self.r_half = r_half
+        self.temp = temp
 
         # moderation
         self.moderate = moderate
@@ -527,11 +536,41 @@ class SimSomMod:
                 # each row is the information: messages, appeal, popularity, recency, ages, ranking
                 message_info, ranking = self._rank_newsfeed(newsfeed)
 
-                # make sure ranking order is correct
-                # assert (message_info[0] == messages).all()
-                if sum(ranking) == 0:
+                # Calculate p(reshare|seen) as selection weights for each seen message
+                messages = message_info[0]  # seen message IDs
+                
+                if len(messages) == 0:
                     return False
-                (message_id,) = random.choices(messages, weights=ranking, k=1)
+                
+                # Get this agent's friends (people they follow)
+                friend_indices = self.network.successors(agent)  # people this agent follows
+                friend_uids = [self.network.vs[idx]["uid"] for idx in friend_indices]
+                
+                p_reshare_weights = []
+                for i, message_id in enumerate(messages):
+                    # Get a (appeal) and r (recency) from the message_info
+                    a = message_info[1][i]  # appeal (second row in message_info)
+                    r = message_info[3][i]  # recency (fourth row in message_info)
+                    
+                    # Calculate real e_i (engagement among friends of this agent)
+                    friends_who_shared = 0
+                    if message_id in self.message_metadata:
+                        spread_agents = self.message_metadata[message_id]["spread_via_agents"]
+                        friends_who_shared = len(set(friend_uids) & set(spread_agents))
+                    
+                    # Calculate e_i as fraction of friends who shared this message
+                    e_i = friends_who_shared / len(friend_uids) if len(friend_uids) > 0 else 0
+                    
+                    # Apply the formula: p(reshare|seen) = (a * r) / (1 + exp(-e_i))
+                    p_reshare = (a * r) / (1 + np.exp(-e_i))
+                    p_reshare_weights.append(p_reshare)
+                
+                # Check if any weights are non-zero
+                if sum(p_reshare_weights) == 0:
+                    return False
+                
+                # Select exactly one message using p(reshare|seen) as weights
+                (message_id,) = random.choices(messages, weights=p_reshare_weights, k=1)
                 if self.save_newsfeed_message_info:
                     is_chosen = np.zeros(len(messages))
                     is_chosen[np.where(messages == message_id)] = 1
@@ -841,28 +880,95 @@ class SimSomMod:
         self, newsfeed: Tuple[List, List, List]
     ) -> Tuple[List[np.ndarray], np.ndarray]:
         """
-        Calculate probability of being reshared for messages in the newsfeed using the formula:
-        $$ P(m) = w_ee_m + w_p\frac{p_m}{\sum^{\sigma}_{j\in M_i}p_j} + w_rr_m $$
-        where $e_m, p_m, r_m$ are the appeal, no_shares and recency of a message and $w_e, w_p, w_r$ are their respective weights.
+        Calculate probability of being reshared for messages in the newsfeed.
+        First determines which messages are "seen" based on p(seen) probabilities,
+        then only ranks and returns the seen messages.
 
         The recency of a message m follow a stretched exponential distribution estimated empirically by Wu & Huberman
         https://www.pnas.org/doi/10.1073/pnas.0704916104
         $r ~ e^{-0.4t^{0.4}}$ where t is the time step
 
+        Also calculates p(seen) using sigmoid function: p(seen) = 1 / (1 + exp((rank - r_half) / temp))
 
         Input:
             newsfeed (tuple of np.arrays): (message_ids, no_shares, ages), represents an agent's news feed
+        Output:
+            message_info: array with message metadata for seen messages only
+            ranking: normalized ranking scores for resharing (seen messages only)
         """
         messages, shares, ages = newsfeed
         appeal = np.array([self.all_messages[message].appeal for message in messages])
         recency = np.exp(-0.4 * (ages**0.4))
 
-        ranking = appeal * shares * recency / np.sum(appeal * shares * recency)
+        # Calculate base ranking scores with deranking applied
+        base_ranking = np.zeros(len(messages))
+        total_unique_sharers = 0
 
-        # assert len(popularity) == len(appeal) == len(ranking)
+        # First pass: calculate total unique sharers across all messages for normalization
+        for message_id in messages:
+            if message_id in self.message_metadata:
+                total_unique_sharers += len(self.message_metadata[message_id]["spread_via_agents"])
+
+        # Second pass: calculate deranked scores
+        for i, message_id in enumerate(messages):
+            message = self.all_messages[message_id]
+            
+            # Calculate a*r*e_g components
+            a = appeal[i]  # appeal
+            r = recency[i]  # recency
+            
+            # Calculate e_g (global engagement) using unique sharers
+            if message_id in self.message_metadata:
+                unique_sharers = len(self.message_metadata[message_id]["spread_via_agents"])
+                e_g = unique_sharers / total_unique_sharers if total_unique_sharers > 0 else 1/len(messages)
+            else:
+                e_g = 1/len(messages)  # default for new messages
+            
+            base_score = a * r * e_g
+            
+            # Apply deranking for bad content
+            if self.modeling_legality:
+                is_bad_content = hasattr(message, 'legality') and message.legality == "illegal"
+            else:
+                is_bad_content = message.quality < 0.5
+                
+            if is_bad_content:
+                base_ranking[i] = self.deranking_severity * base_score  # c × a*r*e_g
+            else:
+                base_ranking[i] = base_score  # 1.0 × a*r*e_g
+        
+        # Sort messages by ranking scores to get ranks
+        sorted_indices = np.argsort(base_ranking)[::-1]  # descending order
+        ranks = np.zeros(len(messages))
+        for i, idx in enumerate(sorted_indices):
+            ranks[idx] = i + 1  # rank starts from 1
+        
+        # Calculate p(seen) using sigmoid function
+        p_seen = 1 / (1 + np.exp((ranks - self.r_half) / self.temp))
+        
+        # Filter to only "seen" messages using coin flips
+        seen_indices = []
+        for i, message_id in enumerate(messages):
+            if random.random() < p_seen[i]:
+                seen_indices.append(i)
+        
+        # If no messages are seen, return empty arrays
+        if len(seen_indices) == 0:
+            return np.array([]), np.array([])
+        
+        # Filter newsfeed to only seen messages
+        seen_messages = messages[seen_indices]
+        seen_shares = shares[seen_indices]
+        seen_ages = ages[seen_indices]
+        seen_appeal = appeal[seen_indices]
+        seen_recency = recency[seen_indices]
+        seen_base_ranking = base_ranking[seen_indices]
+        
+        # Calculate ranking scores only for seen messages
+        ranking = seen_base_ranking / np.sum(seen_base_ranking) if np.sum(seen_base_ranking) > 0 else np.ones(len(seen_base_ranking)) / len(seen_base_ranking)
 
         ## tracking
-        message_info = np.vstack([messages, appeal, shares, recency, ages, ranking])
+        message_info = np.vstack([seen_messages, seen_appeal, seen_shares, seen_recency, seen_ages, ranking])
         return message_info, ranking
 
     def _update_feed_handle_overlap(

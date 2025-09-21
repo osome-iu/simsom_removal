@@ -102,6 +102,7 @@ def create_network_file(config_fpath, in_fpath, out_fpath):
     subprocess.run(cmd, shell=True, check=True)
     print(
         f"Infosys network created with infile {in_fpath} and {config_fpath} at {out_fpath}."
+    )
 
 
 def main(args):
